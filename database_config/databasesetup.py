@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-db_url = os.getenv("DATABASE_URL")
+db_url = os.getenv("TEST_DATABASE_URL")
 
 if not db_url:
     raise ValueError(
