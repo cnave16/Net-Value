@@ -133,6 +133,11 @@ CREATE TABLE IF NOT EXISTS team_seasons (
 );
 """
 
+ALTER_TABLES_SQL = """
+ALTER TABLE player_seasons
+ADD COLUMN IF NOT EXISTS contract_value NUMERIC(14, 2);
+"""
+
 
 CREATE_INDEXES_SQL = """
 CREATE INDEX IF NOT EXISTS idx_player_seasons_player
@@ -169,6 +174,9 @@ def setup_database():
 
         print("Creating tables...")
         cursor.execute(CREATE_TABLES_SQL)
+
+        print("Updating player contracts...")
+        cursor.execute(ALTER_TABLES_SQL)
 
         print("Creating indexes...")
         cursor.execute(CREATE_INDEXES_SQL)
