@@ -8,4 +8,5 @@ def success(data, meta=None):
 
 
 def failure(code, message, status):
+    # Flask reads this tuple as the JSON response plus its HTTP status code.
     return jsonify(data=None, meta={}, error={"code": code, "message": message}), status

@@ -2,7 +2,6 @@
 
 from flask import Blueprint
 
-# Two dots refer to the parent package, backend.
 from ..database import query
 from ..responses import success
 
@@ -11,19 +10,15 @@ from ..responses import success
 health = Blueprint("health", __name__)
 
 
-# A GET request to /api/health runs the function below.
 @health.get("/health")
 def health_check():
-    # No database access, this confirms the application itself can respond.
-    # success() wraps the dictionary in our standard JSON response format.
+    # Check that the app responds without needing the database.
     return success({"status": "ok"})
 
 
 @health.get("/health/db")
 def database_check():
-    # Execute a small, read-only query: return 1 in a column named "ready".
-    # This checks connectivity and SQL execution, not project tables or data.
-    # If it raises an error, Flask's error handlers produce the response;
-    # execution will not reach the success return below.
+    # Test a database query without checking project tables or changing data.
+    # A failed query goes to Flask's error handlers instead of returning success.
     query("SELECT 1 AS ready")
     return success({"status": "ok", "database": "connected"})

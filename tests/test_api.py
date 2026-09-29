@@ -1,3 +1,5 @@
+# Check API responses and database cleanup without contacting a real database.
+
 from unittest.mock import MagicMock
 
 import psycopg2
@@ -37,6 +39,7 @@ def test_invalid_filters_fail_before_database_access(client, url):
 
 
 def test_search_is_bound_and_missing_values_are_null(client, monkeypatch):
+    # Replace the query so we can inspect SQL and values without running them.
     query = MagicMock(return_value=[{
         "id": 1, "name": "Sample Player", "external_id": None, "total": 1
     }])
@@ -54,6 +57,7 @@ def test_search_is_bound_and_missing_values_are_null(client, monkeypatch):
 
 
 def test_empty_page_keeps_total(client, monkeypatch):
+    # The SQL returns a count-only row when the requested page is empty.
     monkeypatch.setattr(catalog, "query", lambda *args: [{"id": None, "total": 21}])
     response = client.get("/api/players?page=3&limit=20")
     assert response.json["data"] == []
@@ -83,6 +87,7 @@ def test_database_failure_does_not_expose_connection(client, monkeypatch, caplog
 
 
 def test_connection_is_reused_and_closed(app, monkeypatch):
+    # The app context lets us check reuse inside it and cleanup when it ends.
     connection = MagicMock()
     connect = MagicMock(return_value=connection)
     monkeypatch.setattr(database.psycopg2, "connect", connect)
@@ -108,6 +113,7 @@ def test_pending_features_do_not_claim_analysis(client, method, path):
 
 
 def test_cors_allows_configured_frontend_only(client):
+    # Browsers send this OPTIONS check before certain cross-origin requests.
     response = client.options("/api/trade/validate", headers={
         "Origin": "http://localhost:5173",
         "Access-Control-Request-Method": "POST",

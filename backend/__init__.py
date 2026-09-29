@@ -14,9 +14,11 @@ from .responses import failure
 
 
 def create_app(test_config=None):
+    # Build the app with its settings, routes, and shared error handlers.
     load_dotenv(Path(__file__).resolve().parents[1] / ".env")
     app = Flask(__name__)
     app.config.from_mapping(
+        # Use the test database unless a DATABASE_URL is explicitly supplied.
         DATABASE_URL=os.getenv("DATABASE_URL") or os.getenv("TEST_DATABASE_URL"),
         CORS_ORIGINS=os.getenv(
             "CORS_ORIGINS", "http://localhost:5173,http://localhost:3000"
@@ -24,8 +26,11 @@ def create_app(test_config=None):
         MAX_CONTENT_LENGTH=64 * 1024,
     )
     if test_config is not None:
+        # Tests can override settings without changing the local .env file.
         app.config.update(test_config)
+    # Let the configured frontend origins read API responses in the browser.
     CORS(app, resources={r"/api/*": {"origins": app.config["CORS_ORIGINS"]}})
+    # Clean up database connections after requests, including failed ones.
     app.teardown_appcontext(close_db)
 
     from .routes.catalog import catalog
@@ -33,14 +38,16 @@ def create_app(test_config=None):
     from .routes.pending import pending
 
     for blueprint in (catalog, health, pending):
+        # Each route group shares the /api URL prefix.
         app.register_blueprint(blueprint, url_prefix="/api")
 
     @app.errorhandler(HTTPException)
     def handle_http_error(error):
+        # Return JSON for HTTP errors instead of Flask's default HTML page.
         response, status = failure(
             error.name.upper().replace(" ", "_"), error.description, error.code
         )
-        # Retain protocol headers such as Allow on a 405 response.
+        # Keep headers such as Allow, which lists the permitted HTTP methods.
         original = error.get_response()
         original.set_data(response.get_data())
         original.content_type = "application/json"

@@ -1,7 +1,6 @@
 # Net Value API contract
 
-This is the implemented first-week contract for Bronson's backend work.
-Base URL: `http://localhost:5000/api`. Field names use snake_case.
+Base URL: `http://localhost:5001/api`. Field names use snake_case.
 This document describes current behavior; the project proposal describes the
 broader target. Elias should consume `response.data.data` when using Axios.
 
