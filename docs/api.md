@@ -44,6 +44,7 @@ and display the message to the user. Database and server internals are omitted.
 | GET | `/seasons` | Season IDs and years, newest first |
 | GET | `/players` | Player search, season/team filters, pagination |
 | GET | `/players/<id>` | Player details; 404 if absent |
+| POST | `/projections/wins` | Estimate roster wins from one season's ratings and minutes |
 
 `/players` accepts these query parameters:
 
@@ -89,6 +90,45 @@ authoritative current roster information. Salary, predicted value, and surplus
 also remain null because the current schema/model does not supply them.
 An empty or out-of-range page returns 200 with `data: []` and the true count.
 
+## Roster win projection
+
+Send `POST /api/projections/wins` with `Content-Type: application/json`:
+
+```json
+{
+  "player_ids": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+  "season_id": 7
+}
+```
+
+IDs here are examples. Use internal player IDs from `/players` and a season ID
+from `/seasons`, not NBA external IDs. Both fields are required; extra fields
+are rejected. IDs must be JSON integers from 1 through 2147483647. The roster
+must contain 12–15 distinct players, following the model demo's input limit.
+This limit does not establish NBA roster or trade legality.
+
+The backend reads through its existing read-only database connection and sums
+each player's minutes across all teams in the requested season. Every player
+must exist and have a finite LEBRON rating and positive recorded minutes in
+that season. Unknown players or incomplete season data return 422 with code
+`UNPROCESSABLE_ENTITY` and the affected IDs. Invalid request fields return 400;
+non-JSON content types return 415. Database failures use the existing 503 errors.
+
+On success, `data` contains `projected_wins`, `team_lebron`, `top10_std`,
+`positive_share`, and `top3_share`, as returned by Chase's `project_wins` function.
+`meta` echoes the requested `season_id` and `player_ids`.
+
+The estimate uses historical minutes, including minutes played for other teams.
+It does not predict a new rotation, verify current team membership, price a
+player, or determine trade legality. The model code and importer are unchanged;
+the endpoint never calls the model's database helpers or imports the CSV.
+Mocked integration tests cover this endpoint. A read-only live check on
+September 29, 2026 confirmed the test database had 435 players with usable
+ratings and minutes for the 2025–2026 season. A request with 12 sample players
+returned HTTP 200 with the expected response fields. This verified integration,
+not prediction accuracy or an actual team's roster. Repeat the check when the
+database configuration, schema, or data changes.
+
 ## Reserved endpoints
 
 `POST /valuation`, `POST /trade/validate`, and `GET /picks` always return 501
@@ -105,9 +145,9 @@ The proposal's request formats remain design targets:
 
 Before these become working endpoints, coordinate the following:
 
-- Chase: model inputs, output units, trained model interface, and whether the
-  first model predicts wins, player value, or fair-market salary. These are
-  distinct quantities in the proposal and should not be treated as interchangeable.
+- Chase: the integrated model predicts roster wins from LEBRON ratings and
+  historical minutes. Agree on a separate player-value or fair-market-salary
+  model before implementing `/valuation`; roster wins do not supply those values.
 - Vincent and Chase: current roster membership, contract years and salaries,
   draft pick ownership/protections, and data freshness fields.
 - Bronson and Elias: response fields for analysis, validation failures, and
@@ -127,13 +167,13 @@ other environments. No authentication is required by this initial public API.
 Run locally and check:
 
 ```sh
-curl http://localhost:5000/api/health
-curl http://localhost:5000/api/health/db
-curl http://localhost:5000/api/teams
-curl 'http://localhost:5000/api/players?limit=5'
+curl http://localhost:5001/api/health
+curl http://localhost:5001/api/health/db
+curl http://localhost:5001/api/teams
+curl 'http://localhost:5001/api/players?limit=5'
 ```
 
 Automated tests cover response behavior, validation, bound query parameters,
 pagination edge cases, database failure handling, connection cleanup, and CORS.
-They mock PostgreSQL; a live development-database smoke check is also needed
-to verify schema compatibility and deployed connectivity.
+They mock PostgreSQL. The live projection check above verified the test database
+separately; automated test success alone does not verify live connectivity.

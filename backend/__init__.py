@@ -36,8 +36,9 @@ def create_app(test_config=None):
     from .routes.catalog import catalog
     from .routes.health import health
     from .routes.pending import pending
+    from .routes.projections import projections
 
-    for blueprint in (catalog, health, pending):
+    for blueprint in (catalog, health, pending, projections):
         # Each route group shares the /api URL prefix.
         app.register_blueprint(blueprint, url_prefix="/api")
 
