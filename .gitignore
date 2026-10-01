@@ -2,6 +2,7 @@
 .env
 .env.*
 *.env
+!.env.example
 
 # Python virtual environments
 venv/
@@ -22,3 +23,7 @@ build/
 .idea/
 .DS_Store
 Thumbs.db
+.pytest_cache/
+
+# Local assistant instructions
+/AGENTS.md
