@@ -44,7 +44,8 @@ def players():
     # Validate filters, fetch one page of players, and include the match count.
     page = integer_argument("page", 1, maximum=1000000)
     limit = integer_argument("limit", 20, maximum=100)
-    season_id = integer_argument("season_id")
+    # PostgreSQL SERIAL IDs fit in a signed 32-bit integer.
+    season_id = integer_argument("season_id", maximum=2147483647)
     search = request.args.get("search", "").strip()
     team = request.args.get("team", "").strip().upper()
     if len(search) > 100:
@@ -113,6 +114,8 @@ def player_response(row):
 @catalog.get("/players/<int:player_id>")
 def player(player_id):
     # Look up our database ID, not an external provider's player ID.
+    if not 1 <= player_id <= 2147483647:
+        raise BadRequest("player_id must be a positive database integer ID.")
     rows = query(
         "SELECT player_id AS id, first_name || ' ' || last_name AS name, "
         "external_id FROM players WHERE player_id = %s", (player_id,)

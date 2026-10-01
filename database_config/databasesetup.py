@@ -1,6 +1,3 @@
-# Create the starting tables and indexes in the test database.
-# This sets up the schema; it does not load any player or team records.
-
 import os
 import psycopg2
 from dotenv import load_dotenv
@@ -15,9 +12,6 @@ if not db_url:
     )
 
 
-# Existing tables are skipped, so this will not apply later schema changes.
-# Player ratings are stored per season; minutes are split by team and season.
-# ON DELETE CASCADE removes related rows when their parent record is deleted.
 CREATE_TABLES_SQL = """
 CREATE TABLE IF NOT EXISTS teams (
     team_id SERIAL PRIMARY KEY,
@@ -140,7 +134,6 @@ CREATE TABLE IF NOT EXISTS team_seasons (
 """
 
 
-# Index the IDs used when joining players, teams, and seasons.
 CREATE_INDEXES_SQL = """
 CREATE INDEX IF NOT EXISTS idx_player_seasons_player
     ON player_seasons(player_id);
@@ -163,7 +156,6 @@ CREATE INDEX IF NOT EXISTS idx_team_seasons_season
 
 
 def setup_database():
-    # Create missing tables and indexes, then list the public tables to confirm.
     connection = None
     cursor = None
 

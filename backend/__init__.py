@@ -20,9 +20,13 @@ def create_app(test_config=None):
     app.config.from_mapping(
         # Use the test database unless a DATABASE_URL is explicitly supplied.
         DATABASE_URL=os.getenv("DATABASE_URL") or os.getenv("TEST_DATABASE_URL"),
-        CORS_ORIGINS=os.getenv(
-            "CORS_ORIGINS", "http://localhost:5173,http://localhost:3000"
-        ).split(","),
+        CORS_ORIGINS=[
+            origin.strip()
+            for origin in os.getenv(
+                "CORS_ORIGINS", "http://localhost:5173,http://localhost:3000"
+            ).split(",")
+            if origin.strip()
+        ],
         MAX_CONTENT_LENGTH=64 * 1024,
     )
     if test_config is not None:

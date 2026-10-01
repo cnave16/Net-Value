@@ -1,6 +1,3 @@
-# Manually check both test and production database connections with SELECT version().
-# This script runs immediately, even if imported; it does not check project tables.
-
 import os
 import psycopg2
 from dotenv import load_dotenv
@@ -24,7 +21,6 @@ try:
 except Exception as error:
     print("Failed to connect: ", error)
 
-# This second check uses production, unlike the API's development fallback.
 load_dotenv()
 db_url = os.getenv("PROD_DATABASE_URL")
 
@@ -43,3 +39,4 @@ try:
 
 except Exception as error:
     print("Failed to connect: ", error)
+

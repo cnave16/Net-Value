@@ -1,6 +1,7 @@
 # Net Value API contract
 
 Base URL: `http://localhost:5001/api`. Field names use snake_case.
+See [frontend setup](frontend-setup.md) for local integration steps.
 This document describes current behavior; the project proposal describes the
 broader target. Elias should consume `response.data.data` when using Axios.
 
@@ -29,7 +30,8 @@ contains a stable code and a readable message:
 ```
 
 Codes include `BAD_REQUEST` (400), `NOT_FOUND` (404), `METHOD_NOT_ALLOWED`
-(405), `NOT_IMPLEMENTED` (501), `DATABASE_UNAVAILABLE` (503 for database
+(405), `REQUEST_ENTITY_TOO_LARGE` (413), `UNSUPPORTED_MEDIA_TYPE` (415),
+`UNPROCESSABLE_ENTITY` (422), `NOT_IMPLEMENTED` (501), `DATABASE_UNAVAILABLE` (503 for database
 driver failures), `SERVICE_UNAVAILABLE` (503 for missing configuration), and
 `INTERNAL_ERROR` (500). The client should use HTTP status and code for logic,
 and display the message to the user. Database and server internals are omitted.
@@ -53,7 +55,7 @@ and display the message to the user. Database and server internals are omitted.
 | `search` | empty | Case-insensitive name substring, at most 100 characters |
 | `page` | 1 | Integer from 1 to 1,000,000 |
 | `limit` | 20 | Integer from 1 to 100 |
-| `season_id` | unset | Positive ID from `/seasons` |
+| `season_id` | unset | Database ID from `/seasons`, from 1 to 2147483647 |
 | `team` | unset | Three-letter abbreviation; requires `season_id` |
 
 Example: `GET /api/players?team=BOS&season_id=1&page=1&limit=20`.
@@ -80,6 +82,8 @@ Use actual IDs from `/seasons`; the example does not assert which year ID 1 mean
 
 Example data is illustrative. Results use database IDs, not external provider IDs.
 `/players/<id>` returns one object of the same shape and empty metadata.
+An ID of zero or above 2147483647 returns 400. A valid ID with no player returns
+404. The integer URL route does not match negative or nonnumeric IDs (404).
 `/teams` returns `id`, `abbreviation`, `team_name`, `city`.
 `/seasons` returns `id`, `start_year`, `end_year`.
 
@@ -162,7 +166,11 @@ database writes or schema changes are performed by the API.
 
 CORS allows `http://localhost:5173` and `http://localhost:3000` by default.
 Set `CORS_ORIGINS` to a comma-separated list of exact frontend origins for
-other environments. No authentication is required by this initial public API.
+other environments. Spaces around entries and empty entries are ignored.
+Origins include the scheme, hostname, and port, with no path or trailing slash.
+`localhost` and `127.0.0.1` are different origins. CORS controls browser access
+to responses; it is not authentication. No authentication is required by this
+initial public API. Request bodies are limited to 64 KiB.
 
 Run locally and check:
 

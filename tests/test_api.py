@@ -122,3 +122,25 @@ def test_cors_allows_configured_frontend_only(client):
     assert response.headers["Access-Control-Allow-Origin"] == "http://localhost:5173"
     response = client.get("/api/health", headers={"Origin": "https://unconfigured.example"})
     assert "Access-Control-Allow-Origin" not in response.headers
+
+
+@pytest.mark.parametrize("path", [
+    "/api/players?season_id=2147483648",
+    "/api/players/2147483648",
+    "/api/players/0",
+])
+def test_invalid_database_ids_do_not_reach_sql(client, monkeypatch, path):
+    query = MagicMock()
+    monkeypatch.setattr(catalog, "query", query)
+    response = client.get(path)
+    assert response.status_code == 400
+    assert response.json["error"]["code"] == "BAD_REQUEST"
+    query.assert_not_called()
+
+
+def test_cors_environment_accepts_spaces_and_empty_entries(monkeypatch):
+    monkeypatch.setenv("CORS_ORIGINS", " http://localhost:5173, , http://localhost:3000, ")
+    client = create_app({"TESTING": True, "DATABASE_URL": None}).test_client()
+    for origin in ("http://localhost:5173", "http://localhost:3000"):
+        response = client.get("/api/health", headers={"Origin": origin})
+        assert response.headers["Access-Control-Allow-Origin"] == origin
