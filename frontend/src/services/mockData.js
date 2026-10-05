@@ -3,21 +3,21 @@
 // figures and fair values are made up: always label this data as an example.
 
 const PLAYERS = [
-  { id: 1, name: 'Stephen Curry', team: 'GSW', salary: 59_606_817, predicted_value: 48_500_000 },
-  { id: 2, name: 'Nikola Jokic', team: 'DEN', salary: 55_224_526, predicted_value: 71_000_000 },
-  { id: 3, name: 'Shai Gilgeous-Alexander', team: 'OKC', salary: 38_333_050, predicted_value: 66_000_000 },
-  { id: 4, name: 'Giannis Antetokounmpo', team: 'MIL', salary: 54_126_450, predicted_value: 62_500_000 },
-  { id: 5, name: 'Jalen Brunson', team: 'NYK', salary: 34_944_001, predicted_value: 44_000_000 },
-  { id: 6, name: 'Victor Wembanyama', team: 'SAS', salary: 13_376_880, predicted_value: 52_000_000 },
-  { id: 7, name: 'Bradley Beal', team: 'LAC', salary: 5_200_000, predicted_value: 9_000_000 },
-  { id: 8, name: 'Jayson Tatum', team: 'BOS', salary: 54_126_450, predicted_value: null },
-  { id: 9, name: 'Zach LaVine', team: 'SAC', salary: 47_499_660, predicted_value: 27_000_000 },
-  { id: 10, name: 'Tyrese Haliburton', team: 'IND', salary: 45_550_512, predicted_value: null },
-  { id: 11, name: 'Anthony Edwards', team: 'MIN', salary: 45_550_512, predicted_value: 53_000_000 },
-  { id: 12, name: 'Cade Cunningham', team: 'DET', salary: 46_394_100, predicted_value: 47_500_000 },
-  { id: 13, name: 'Chet Holmgren', team: 'OKC', salary: 13_731_368, predicted_value: 31_000_000 },
-  { id: 14, name: 'Paul George', team: 'PHI', salary: 51_666_090, predicted_value: 24_000_000 },
-  { id: 15, name: 'Amen Thompson', team: 'HOU', salary: 9_635_640, predicted_value: 28_500_000 },
+  { id: 1, name: 'Stephen Curry', nba_id: '201939', team: 'GSW', salary: 59_606_817, predicted_value: 48_500_000 },
+  { id: 2, name: 'Nikola Jokic', nba_id: '203999', team: 'DEN', salary: 55_224_526, predicted_value: 71_000_000 },
+  { id: 3, name: 'Shai Gilgeous-Alexander', nba_id: '1628983', team: 'OKC', salary: 38_333_050, predicted_value: 66_000_000 },
+  { id: 4, name: 'Giannis Antetokounmpo', nba_id: '203507', team: 'MIL', salary: 54_126_450, predicted_value: 62_500_000 },
+  { id: 5, name: 'Jalen Brunson', nba_id: '1628973', team: 'NYK', salary: 34_944_001, predicted_value: 44_000_000 },
+  { id: 6, name: 'Victor Wembanyama', nba_id: '1641705', team: 'SAS', salary: 13_376_880, predicted_value: 52_000_000 },
+  { id: 7, name: 'Bradley Beal', nba_id: '203078', team: 'LAC', salary: 5_200_000, predicted_value: 9_000_000 },
+  { id: 8, name: 'Jayson Tatum', nba_id: '1628369', team: 'BOS', salary: 54_126_450, predicted_value: null },
+  { id: 9, name: 'Zach LaVine', nba_id: '203897', team: 'SAC', salary: 47_499_660, predicted_value: 27_000_000 },
+  { id: 10, name: 'Tyrese Haliburton', nba_id: '1630169', team: 'IND', salary: 45_550_512, predicted_value: null },
+  { id: 11, name: 'Anthony Edwards', nba_id: '1630162', team: 'MIN', salary: 45_550_512, predicted_value: 53_000_000 },
+  { id: 12, name: 'Cade Cunningham', nba_id: '1630595', team: 'DET', salary: 46_394_100, predicted_value: 47_500_000 },
+  { id: 13, name: 'Chet Holmgren', nba_id: '1631096', team: 'OKC', salary: 13_731_368, predicted_value: 31_000_000 },
+  { id: 14, name: 'Paul George', nba_id: '202331', team: 'PHI', salary: 51_666_090, predicted_value: 24_000_000 },
+  { id: 15, name: 'Amen Thompson', nba_id: '1641708', team: 'HOU', salary: 9_635_640, predicted_value: 28_500_000 },
 ]
 
 const delay = (ms = 250) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -26,7 +26,7 @@ function toPlayer(p) {
   return {
     id: p.id,
     name: p.name,
-    external_id: null,
+    external_id: p.nba_id,
     team: p.team,
     salary: p.salary,
     predicted_value: p.predicted_value,
