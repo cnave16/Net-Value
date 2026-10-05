@@ -1,0 +1,94 @@
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --border: #e2e5ea;
+  --text: #16191f;
+  --muted: #5f6672;
+  --accent: #1d4ed8;
+  --positive: #15803d;
+  --negative: #b91c1c;
+  --salary: #94a3b8;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115;
+    --surface: #181b21;
+    --border: #2a2f38;
+    --text: #e8eaee;
+    --muted: #9aa1ad;
+    --accent: #60a5fa;
+    --positive: #4ade80;
+    --negative: #f87171;
+    --salary: #64748b;
+  }
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); }
+h1 { font-size: 1.5rem; margin: 0 0 1rem; }
+h2 { margin: 0.25rem 0; }
+.muted { color: var(--muted); }
+.error { color: var(--negative); }
+
+.navbar {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;
+  padding: 0.75rem 1.5rem; background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.navbar a { color: var(--muted); text-decoration: none; margin-left: 1.25rem; font-weight: 500; }
+.navbar a.brand { color: var(--text); margin-left: 0; font-weight: 700; font-size: 1.15rem; }
+.navbar a.active { color: var(--accent); }
+
+main { max-width: 1100px; margin: 0 auto; padding: 1.5rem 1rem; }
+
+.players-page { display: grid; grid-template-columns: 1fr 360px; gap: 1.5rem; align-items: start; }
+@media (max-width: 800px) { .players-page { grid-template-columns: 1fr; } }
+
+.search-bar {
+  width: 100%; padding: 0.6rem 0.8rem; font-size: 1rem; margin-bottom: 1rem;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text);
+}
+
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.75rem; }
+.cards.loading { opacity: 0.5; }
+
+.player-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0.25rem; text-align: left;
+  padding: 0.85rem 1rem; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text); font: inherit; cursor: pointer;
+}
+.player-card:hover { border-color: var(--accent); }
+.player-card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+.player-name { font-weight: 600; }
+.player-meta { color: var(--muted); font-size: 0.875rem; }
+.player-surplus { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 0.9rem; }
+
+.positive { color: var(--positive); }
+.negative { color: var(--negative); }
+
+.detail-panel {
+  position: sticky; top: 1rem; padding: 1.25rem; border: 1px solid var(--border);
+  border-radius: 12px; background: var(--surface);
+}
+.detail-panel.empty { color: var(--muted); text-align: center; padding: 2.5rem 1.25rem; }
+.badge {
+  display: inline-block; margin: 0 0 0.5rem; padding: 0.15rem 0.5rem; border-radius: 999px;
+  font-size: 0.75rem; background: #fef3c7; color: #78350f;
+}
+
+.value-bars { display: grid; gap: 0.9rem; margin: 1.25rem 0; }
+.value-bar-label { display: flex; justify-content: space-between; font-size: 0.875rem; margin-bottom: 0.3rem; }
+.value-bar-label span:last-child { font-variant-numeric: tabular-nums; font-weight: 600; }
+.value-bar-track { height: 10px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.value-bar-fill { height: 100%; border-radius: 999px; }
+.value-bar-fill.fair { background: var(--accent); }
+.value-bar-fill.salary { background: var(--salary); }
+
+.surplus {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 0.75rem 1rem; border-radius: 8px; background: var(--bg);
+}
+.surplus strong { font-size: 1.4rem; font-variant-numeric: tabular-nums; }
