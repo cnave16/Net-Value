@@ -6,7 +6,7 @@ import axios from 'axios'
 import * as mock from './mockData.js'
 
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5001/api'
+  import.meta.env.VITE_API_BASE_URL ?? '/api'
 
 // Sample data until the 11/10 integration pass; set VITE_USE_MOCK=false for live Flask.
 export const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'
