@@ -48,6 +48,16 @@ See [the API contract](docs/api.md) for endpoints, examples, and integration gap
 For React setup and a first end-to-end request, see the
 [frontend handoff](docs/frontend-setup.md).
 
+## Frontend development
+
+Elias's React app lives in `frontend/`. In a second terminal, with Node.js
+22.12 or newer installed, run `npm ci` and `npm run dev` from that folder.
+It defaults to sample data. Set `VITE_USE_MOCK=false` in `frontend/.env.local`
+and restart Vite to connect to Flask on port 5001 through the `/api` proxy.
+Player search and details are available; draft and trade screens are placeholders.
+
+Run `npm run lint` and `npm run build` from `frontend/` to check frontend changes.
+
 ## What is ready
 
 - Team and season lists, player search with pagination, and player details.
@@ -104,6 +114,9 @@ backend/
     catalog.py         Players, teams, seasons
     pending.py         Reserved valuation, trade, and pick routes
     projections.py     Roster win estimates using Chase's calculation
+frontend/
+  src/                React pages, components, and shared API client
+  vite.config.js      Development proxy to Flask on port 5001
 data_model/
   project_wins.py      Chase's roster win calculation and standalone demo
 database_config/

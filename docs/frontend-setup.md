@@ -24,66 +24,68 @@ addresses to confirm the backend is available:
 A successful health check does not guarantee that player data has been loaded.
 An empty list is valid; coordinate data loading with the team if necessary.
 
-## Connect React
+## Start React
 
-Use `http://localhost:5001/api` as the API base URL in the frontend's existing
-configuration. This repository does not contain a React app yet. If the frontend
-uses Vite, a local setting can be:
+The React app is in `frontend/`. Use Node.js 22.12 or newer and install the
+locked dependencies from that directory:
+
+```sh
+cd frontend
+npm ci
+npm run dev
+```
+
+The app defaults to sample data. For live backend requests, create or update
+`frontend/.env.local` with:
 
 ```dotenv
-VITE_API_BASE_URL=http://localhost:5001/api
+VITE_USE_MOCK=false
 ```
 
-Vite exposes these settings to the browser, so never put database credentials
-in a `VITE_` variable. With Axios, an example service is:
+Restart Vite after changing environment settings. Open the address printed by
+Vite (normally `http://localhost:5173`). Keep Flask running on port 5001.
+The default API base URL is `/api`; Vite forwards those requests to
+`http://127.0.0.1:5001`. No direct backend URL is needed for local development.
+
+The shared client in `frontend/src/services/api.js` already unwraps the backend
+response into `{ data, meta }` and converts errors to `ApiError`. Use its helpers
+instead of creating another Axios client. It handles the valuation endpoint's
+501 response by showing unavailable values.
+
+`VITE_API_BASE_URL` is only needed to call another backend directly. That backend
+must allow the frontend origin through CORS. Vite variables are visible in the
+browser: never put database credentials in them. The development proxy is not
+part of a production build; hosting will need an API proxy or an explicit API URL.
+
+## Check the combined app
+
+1. Open `/players` with `VITE_USE_MOCK=false` and confirm real names load.
+2. Search for a player, select the result, and confirm the detail panel loads.
+3. Salary and value should show unavailable, with the valuation-model message.
+4. Open `/draft` and `/trade`; these are still placeholder screens.
+
+The current player screen shows the first page of results and has no pagination
+controls yet. Search still queries the full database. Season stats in the sample
+UI are optional; the current player API does not return a `seasons` field, so
+those stats are absent in live mode. Team selection and win-projection screens
+remain frontend work, even though API helpers are available for them.
+
+## Integrate win projections next
+
+The existing client exposes `getSeasons`, `getTeams`, and `projectWins`:
 
 ```javascript
-import axios from "axios";
+import { projectWins } from './services/api.js';
 
-export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
-});
-
-export async function getPlayers(seasonId, page = 1) {
-  const response = await api.get("/players", {
-    params: { season_id: seasonId, page, limit: 20 },
-  });
-  // Axios's data is the response body; our data field holds the player list.
-  return response.data;
-}
+const { data } = await projectWins(selectedPlayerIds, selectedSeasonId);
+const projectedWins = data.projected_wins;
 ```
 
-The returned body has `data`, `meta`, and `error`. Use `body.data` for players and
-`body.meta.total_pages` for pagination. Axios sends non-2xx responses to its
-error handler; read `error.response?.data?.error?.message` for the API message,
-and provide a fallback for network failures with no response.
-
-The backend allows frontend origins `http://localhost:5173` and
-`http://localhost:3000` by default. For another address, update `CORS_ORIGINS`
-in the backend `.env` and restart Flask. Use exact origins without a trailing
-slash; add a `127.0.0.1` origin separately if that is how you open the frontend.
-
-## Try the first complete flow
-
-1. Request `GET /seasons` and let the user choose a returned season ID.
-2. Request `GET /teams` for team options.
-3. Request `GET /players?season_id=<id>&page=1&limit=20`. Add a team abbreviation
-   or search text when needed. Keep the season when filtering by team.
-4. Let the user select 12–15 distinct players and collect their integer `id`
-   values, not the external NBA IDs.
-5. Submit those IDs with the selected season:
-
-```javascript
-const response = await api.post("/projections/wins", {
-  player_ids: selectedPlayerIds,
-  season_id: selectedSeasonId,
-});
-const projectedWins = response.data.data.projected_wins;
-```
-
-The example uses IDs selected from real responses, rather than assuming IDs
-are identical in every database. A 422 means some players are missing or lack
-usable data for that season; display the explanation instead of an estimate.
+Select a season ID from `/seasons` and 12–15 distinct internal player IDs from
+`/players`. These must be actual database IDs, not external NBA IDs. A 422 means
+some players are missing or lack usable season data; display the explanation
+instead of an estimate. `getTeams`, `getSeasons`, and `projectWins` always call
+the backend, even when the player screens use sample data.
 
 ## Display incomplete features clearly
 
