@@ -62,11 +62,16 @@ Run `npm run lint` and `npm run build` from `frontend/` to check frontend change
 
 - Team and season lists, player search with pagination, and player details.
 - Roster win projections using an explicit season and 12–15 distinct players.
+- Two-team historical trade simulations with before/after wins and net differences.
 - Consistent JSON responses, input validation, and database error handling.
 
-Trade validation, player valuation, and draft pick endpoints are placeholders
-that return HTTP 501. Salary, current team, and player-value fields are not
+Player valuation and draft pick endpoints are placeholders that return HTTP
+501. Trade analysis performs basic roster checks, not full NBA legality checks.
+Salary, current team, and player-value fields are not
 populated yet. Historical team membership must not be treated as a current roster.
+
+See [trade analysis](docs/trades.md) for a request example, payroll assumptions,
+and the remaining legality work. No salary-cap restrictions are enforced yet.
 
 ## Win projections and player data
 
@@ -112,8 +117,12 @@ backend/
   routes/
     health.py          App and database health checks
     catalog.py         Players, teams, seasons
-    pending.py         Reserved valuation, trade, and pick routes
+    pending.py         Reserved valuation and pick routes
     projections.py     Roster win estimates using Chase's calculation
+    trades.py          Two-team trade request validation and response
+  services/
+    trade_data.py      Historical roster and future salary adapters
+    trades.py          Roster exchange, limited checks, and payroll calculations
 frontend/
   src/                React pages, components, and shared API client
   vite.config.js      Development proxy to Flask on port 5001
@@ -128,6 +137,7 @@ player_data/
 docs/
   api.md              Endpoint and response contract
   frontend-setup.md   React setup and integration walkthrough
+  trades.md           Trade request, calculations, limitations, and next steps
 tests/                Backend tests
 ```
 

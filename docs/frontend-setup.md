@@ -1,8 +1,9 @@
 # Frontend setup
 
 Elias can build team and season selection, player search, and roster win
-projections against the current API. Trade validation, player values, and draft
-picks still return 501. See [the API contract](api.md) for the exact fields.
+projections against the current API. Two-team trade analysis is now available
+in the backend; player valuation and draft picks still return 501. See
+[the API contract](api.md) for the exact fields.
 
 ## Start the backend
 
@@ -89,13 +90,19 @@ the backend, even when the player screens use sample data.
 
 ## Display incomplete features clearly
 
+The trade screen remains a placeholder. When wiring it up, update the existing
+`validateTrade` helper to send team IDs and the selected season as described in
+[the trade contract](trades.md). Show results only when `analysis_available`
+is true, and label legality as incomplete rather than showing a legal-trade badge.
+
 | API behavior | Frontend behavior |
 | --- | --- |
 | Empty player list | Show “No players found” |
 | `null` salary, team, or value | Show “Unavailable,” not zero |
 | 400, 413, 415, or 422 | Explain the input or data issue |
 | 503 | Show that the database is unavailable and allow a retry |
-| 501 on trade, valuation, or picks | Show that the feature is not available yet |
+| 501 on valuation or picks | Show that the feature is not available yet |
+| Trade `analysis_available: false` | Show the failed roster checks, not predictions |
 
 Player team filters describe historical season membership. The win projection
 uses historical minutes and does not confirm that a proposed roster is legal,

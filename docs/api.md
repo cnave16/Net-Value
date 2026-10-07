@@ -47,6 +47,8 @@ and display the message to the user. Database and server internals are omitted.
 | GET | `/players` | Player search, season/team filters, pagination |
 | GET | `/players/<id>` | Player details; 404 if absent |
 | POST | `/projections/wins` | Estimate roster wins from one season's ratings and minutes |
+| POST | `/trade/analyze` | Compare two historical rosters before and after a player trade |
+| POST | `/trade/validate` | Alias for `/trade/analyze`, with the same request and response |
 
 `/players` accepts these query parameters:
 
@@ -133,18 +135,33 @@ returned HTTP 200 with the expected response fields. This verified integration,
 not prediction accuracy or an actual team's roster. Repeat the check when the
 database configuration, schema, or data changes.
 
+## Two-team trade analysis
+
+See [the trade contract](trades.md) for the request and response. Both trade
+routes require `season_id`, `team_a_id`, `team_b_id`, `team_a_sends`, and
+`team_b_sends`. Each sends object contains `player_ids`; an optional `pick_ids`
+must be an empty array. Team IDs and season ID are internal database IDs.
+
+Successful analysis returns both teams' roster IDs, before/after projected wins,
+net differences, payroll fields, and a partial legality report. Payroll stays
+null where actual or estimated salary data is unavailable. Full NBA legality
+is always unknown in this version (`legality.is_legal: null`). A 200 response
+can also contain a failed roster check: read `data.analysis_available` before
+displaying predictions. Missing data needed for predictions returns 422.
+
+This replaces the trade endpoint's previous 501 placeholder. Elias's existing
+`validateTrade` helper needs team IDs and season ID added to its request; the
+frontend files have not been changed on this feature branch.
+
 ## Reserved endpoints
 
-`POST /valuation`, `POST /trade/validate`, and `GET /picks` always return 501
+`POST /valuation` and `GET /picks` always return 501
 with `NOT_IMPLEMENTED`. They do not yet validate input, query assets, or perform
 analysis. The frontend should show these features as unavailable.
 
 The proposal's request formats remain design targets:
 
 - Valuation: `player_id`, `ppg`, `rpg`, `apg`, `per`, `win_shares`, `age`.
-- Trade: `team_a_sends` and `team_b_sends`, each containing `player_ids` and
-  `pick_ids` arrays. Explicit participating team IDs, season, and transaction
-  date still need to be agreed upon to support picks-only trades and dated rules.
 - Picks: `slot`, `round`, optional `year`.
 
 Before these become working endpoints, coordinate the following:
@@ -153,7 +170,8 @@ Before these become working endpoints, coordinate the following:
   historical minutes. Agree on a separate player-value or fair-market-salary
   model before implementing `/valuation`; roster wins do not supply those values.
 - Vincent and Chase: current roster membership, contract years and salaries,
-  draft pick ownership/protections, and data freshness fields.
+  draft pick ownership/protections, and data freshness fields. Confirm whether
+  `player_seasons.contract_value` is actual annual salary before mapping it.
 - Bronson and Elias: response fields for analysis, validation failures, and
   unavailable data. A 501 response must never display as a legal or illegal trade.
 

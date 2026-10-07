@@ -104,7 +104,7 @@ def test_connection_is_reused_and_closed(app, monkeypatch):
 
 
 @pytest.mark.parametrize("method,path", [
-    ("post", "/api/valuation"), ("post", "/api/trade/validate"), ("get", "/api/picks")
+    ("post", "/api/valuation"), ("get", "/api/picks")
 ])
 def test_pending_features_do_not_claim_analysis(client, method, path):
     response = getattr(client, method)(path)
