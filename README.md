@@ -62,11 +62,23 @@ Run `npm run lint` and `npm run build` from `frontend/` to check frontend change
 
 - Team and season lists, player search with pagination, and player details.
 - Roster win projections using an explicit season and 12–15 distinct players.
+- Multi-team trade simulations for 2026–27 with before/after wins, win percentages, payroll, and cap-space estimates.
+- A commissioner dashboard with roster details and the top 15 single-player addition targets.
+- Roster checks, salary matching, and first/second-apron checks with explicit coverage gaps.
 - Consistent JSON responses, input validation, and database error handling.
 
-Trade validation, player valuation, and draft pick endpoints are placeholders
-that return HTTP 501. Salary, current team, and player-value fields are not
-populated yet. Historical team membership must not be treated as a current roster.
+Player valuation and draft pick endpoints are placeholders that return HTTP
+501. Trade salaries provisionally use `player_seasons.contract_value` as annual
+USD salary. Missing values stay null. Current roster ownership, full cap
+accounting, and contract/date restrictions still need integration; historical
+membership must not be treated as a current roster. Catalog player salary and
+value fields remain unpopulated.
+
+See [trade analysis](docs/trades.md) for the multi-team request, dashboard
+response, provisional cap estimates, and the legality checker's supported rules.
+Trade and dashboard requests always use 2026–27 cap rules. Their `season_id`
+selects the source data snapshot, so older player ratings can feed the model.
+The old two-team request format is removed; frontend integration is pending.
 
 ## Win projections and player data
 
@@ -112,8 +124,14 @@ backend/
   routes/
     health.py          App and database health checks
     catalog.py         Players, teams, seasons
-    pending.py         Reserved valuation, trade, and pick routes
+    pending.py         Reserved valuation and pick routes
     projections.py     Roster win estimates using Chase's calculation
+    trades.py          Multi-team trades and commissioner dashboard API
+  services/
+    trade_data.py      Historical rosters, candidates, and contract salary mapping
+    trades.py          Multi-team transfers, win comparisons, and target ranking
+    trade_finances.py  Exact payroll arithmetic and verified season cap settings
+    trade_legality.py  Roster, salary-matching, and apron checks
 frontend/
   src/                React pages, components, and shared API client
   vite.config.js      Development proxy to Flask on port 5001
@@ -128,6 +146,7 @@ player_data/
 docs/
   api.md              Endpoint and response contract
   frontend-setup.md   React setup and integration walkthrough
+  trades.md           Trade request, calculations, limitations, and next steps
 tests/                Backend tests
 ```
 
