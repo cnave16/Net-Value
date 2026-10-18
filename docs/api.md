@@ -47,7 +47,8 @@ and display the message to the user. Database and server internals are omitted.
 | GET | `/players` | Player search, season/team filters, pagination |
 | GET | `/players/<id>` | Player details; 404 if absent |
 | POST | `/projections/wins` | Estimate roster wins from one season's ratings and minutes |
-| POST | `/trade/analyze` | Compare two historical rosters before and after a player trade |
+| GET | `/trade/teams/<id>?season_id=<id>` | Commissioner roster, win percentage, and top 15 addition targets |
+| POST | `/trade/analyze` | Compare all participating teams before and after directed player transfers |
 | POST | `/trade/validate` | Alias for `/trade/analyze`, with the same request and response |
 
 `/players` accepts these query parameters:
@@ -135,23 +136,39 @@ returned HTTP 200 with the expected response fields. This verified integration,
 not prediction accuracy or an actual team's roster. Repeat the check when the
 database configuration, schema, or data changes.
 
-## Two-team trade analysis
+## Multi-team trade simulator
 
-See [the trade contract](trades.md) for the request and response. Both trade
-routes require `season_id`, `team_a_id`, `team_b_id`, `team_a_sends`, and
-`team_b_sends`. Each sends object contains `player_ids`; an optional `pick_ids`
-must be an empty array. Team IDs and season ID are internal database IDs.
+See [the trade contract](trades.md) for complete requests, responses, and rule
+coverage. The commissioner dashboard at `GET /trade/teams/<id>?season_id=<id>`
+returns player details, baseline wins/win percentage, and up to 15 targets ranked
+by the gain from adding each player individually.
 
-Successful analysis returns both teams' roster IDs, before/after projected wins,
-net differences, payroll fields, and a partial legality report. Payroll stays
-null where actual or estimated salary data is unavailable. Full NBA legality
-is always unknown in this version (`legality.is_legal: null`). A 200 response
-can also contain a failed roster check: read `data.analysis_available` before
-displaying predictions. Missing data needed for predictions returns 422.
+Both trade POST routes require `season_id`, `team_ids`, and `transfers`. Each
+transfer supplies `player_id`, `from_team_id`, and `to_team_id`. The old
+`team_a_*` / `team_b_*` payload is no longer accepted. The general format supports
+2–30 teams and 1–100 distinct player transfers. Every team must participate.
 
-This replaces the trade endpoint's previous 501 placeholder. Elias's existing
-`validateTrade` helper needs team IDs and season ID added to its request; the
-frontend files have not been changed on this feature branch.
+Analysis returns each team's before/after roster IDs, wins, win percentages,
+payroll, estimated cap space, and legality checks. Percentages use 0–100;
+differences are percentage points. Salaries provisionally use `contract_value`
+as annual USD. Missing salary totals remain null. Cap estimates exclude
+untracked holds/dead money and always use the supplied **2026–27** cap/apron
+figures. `salary_cap.minimum_team_salary` is informational. `season_id` selects
+the source data snapshot, not the trade season: older ratings can feed the
+upcoming-season model. Responses expose `meta.data_season_id` and
+`meta.trade_season: {"start_year": 2026, "end_year": 2027}`. Existing requests
+with `season_id: 1` need no changes. Roster and contract records from that source
+snapshot remain provisional until confirmed for 2026–27.
+
+`legality.passes_supported_rules` reports the outcome of implemented roster,
+salary-matching, and apron checks. `legality.is_legal` remains null because full
+NBA eligibility cannot be established from the available data. A salary-rule
+failure still returns projections; failed ownership checks set
+`analysis_available: false`. Missing model inputs return 422.
+
+Rosters remain historical season membership. The dashboard and simulation do
+not persist a commissioner choice or execute roster changes. Frontend files
+are unchanged; its trade helper must adopt the new payload.
 
 ## Reserved endpoints
 
@@ -170,8 +187,9 @@ Before these become working endpoints, coordinate the following:
   historical minutes. Agree on a separate player-value or fair-market-salary
   model before implementing `/valuation`; roster wins do not supply those values.
 - Vincent and Chase: current roster membership, contract years and salaries,
-  draft pick ownership/protections, and data freshness fields. Confirm whether
-  `player_seasons.contract_value` is actual annual salary before mapping it.
+  draft pick ownership/protections, and data freshness fields. Trade simulation
+  provisionally maps `player_seasons.contract_value` to annual salary; confirm
+  its units and meaning before treating the result as authoritative.
 - Bronson and Elias: response fields for analysis, validation failures, and
   unavailable data. A 501 response must never display as a legal or illegal trade.
 

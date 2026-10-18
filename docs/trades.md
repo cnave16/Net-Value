@@ -1,186 +1,216 @@
-# Two-team trade analysis
+# Multi-team trade simulator
 
-This endpoint exchanges players between two historical season rosters and
-compares each team's projected wins before and after. It never updates roster
-records or executes a real trade. Payroll calculations are ready for salary
-integration, but actual salary mapping and incoming estimates are unavailable.
+The backend supplies a commissioner dashboard and simulates simultaneous player
+transfers between 2–30 teams for the upcoming **2026–27 season only**. There is one general trade format; the old
+`team_a_*` / `team_b_*` format is removed. No frontend files are changed.
+All endpoints are read-only and use the usual `{data, meta, error}` envelope.
 
-## Request
+## Commissioner dashboard
 
-Use `POST /api/trade/analyze`. `POST /api/trade/validate` is an alias returning
-the same analysis and checks. Both endpoints require JSON:
+Get team and season IDs from `GET /api/teams` and `GET /api/seasons`, then call:
+
+```http
+GET /api/trade/teams/10?season_id=1
+```
+
+Use internal database IDs, not NBA external IDs. `season_id` is required and
+selects the source data snapshot (ratings, minutes, and the provisional roster
+and salary records). It does not select the trade season or cap rules. Existing
+requests with `season_id: 1` continue to work using 2026–27 limits. Responses
+identify both `meta.data_season_id` and `meta.trade_season` (2026–2027);
+`meta.season_id` remains an alias for the source data ID.
+The response's `data` contains:
+
+- `team_id`, `abbreviation`, `name`, and `roster` with player details.
+- `projected_wins` and `projected_win_percentage` for the selected roster.
+- `payroll` and `salary_cap`, using the same comparison objects as trades, with
+  identical before/after values because no trade has occurred.
+- `targets`: up to 15 players ranked by the win-percentage gain from adding each
+  player individually, without removing anyone or filtering for trade legality.
+- `eligible_target_count` and `skipped_targets` with IDs and reasons for unusable
+  projection data. Fewer than 15 results are possible.
+
+Each target has `player`, `team_id`, `team_ids`, `projected_wins`, and
+`projected_win_percentage`. The projection objects contain `before`, `after`,
+and `net_difference`. A target's `team_ids` describes historical membership;
+`team_id` is null when that membership does not identify exactly one team.
+Such players can still be ranked as hypothetical additions. Do not guess their
+current owner when constructing a trade.
+
+Player details include `player_id`, `name`, `external_id`, `lebron`,
+`offensive_lebron`, `defensive_lebron`, `minutes`, and `actual_salary`.
+Unavailable optional details are null. Existing roster members are excluded
+from targets. Ties are broken by player ID. Negative or zero gains remain visible
+if they rank in the top 15; this model does not guarantee that adding a player
+improves a roster. Missing target salaries do not prevent win ranking.
+
+Percentages are **0–100**, calculated as `projected_wins / 82 * 100`.
+Percentage differences are percentage points, not relative percent changes.
+
+## Trade request
+
+`POST /api/trade/analyze` and `POST /api/trade/validate` accept the same JSON and
+return the same analysis. Example three-team cycle:
 
 ```json
 {
   "season_id": 1,
-  "team_a_id": 1,
-  "team_b_id": 2,
-  "team_a_sends": {"player_ids": [1]},
-  "team_b_sends": {"player_ids": [2]}
+  "team_ids": [10, 20, 30],
+  "transfers": [
+    {"player_id": 1, "from_team_id": 10, "to_team_id": 20},
+    {"player_id": 13, "from_team_id": 20, "to_team_id": 30},
+    {"player_id": 25, "from_team_id": 30, "to_team_id": 10}
+  ]
 }
 ```
 
-Use internal IDs from `/teams`, `/seasons`, and `/players`, not NBA external IDs.
-Each sends object may also contain `"pick_ids": []` for compatibility with the
-planned frontend shape. Nonempty picks, cash, extra fields, and client-provided
-salaries are rejected rather than silently ignored. IDs must be positive JSON
-integers up to 2147483647; booleans and strings are rejected.
+These IDs are illustrative. Each player moves once, from their starting roster
+to one distinct participating team. A team can send players to several teams,
+receive from several teams, or only send/receive. Every listed team must take
+part. Players cannot be routed through an intermediate team within one request.
 
-The teams must differ, players cannot repeat within or across packages, and at
-least one player must move. One side may send an empty player array; this is
-a supported simulation, not a statement that a player-only one-way transaction
-satisfies all NBA rules. A package can contain at most 100 players as an input
-size limit, not an NBA roster rule.
+Team IDs must be distinct. All IDs must be JSON integers from 1 to 2147483647;
+strings and booleans are rejected. Requests accept 1–100 transfers as a work
+limit, not an NBA roster rule. Extra fields, picks, cash, and client-supplied
+salary/cap overrides are rejected. The general format also supports a trade
+with two participants; there is no separate two-team option or service.
 
-Elias's existing `validateTrade` helper currently sends only the two packages.
-It will need `season_id`, `team_a_id`, and `team_b_id` added before it can call
-these endpoints. No frontend files were changed for this feature.
+## Trade response
 
-## Response
+`data.analysis_available` means roster projections could be computed, **not**
+that the trade is legal. `data.teams` follows the input team order. Each entry
+contains identity fields, `roster_before`/`roster_after` player-ID lists,
+`outgoing_player_ids`, `incoming_player_ids`, projected wins and win percentage
+comparison objects, `payroll`, and `salary_cap`.
 
-The usual `{data, meta, error}` envelope is unchanged. On a successful simulation:
-
-- `data.analysis_available` is true.
-- `data.teams` contains two entries, in team A / team B order.
-- Each entry includes `team_id`, `abbreviation`, `name`, `roster_before`,
-  `roster_after`, `outgoing_player_ids`, and `incoming_player_ids`.
-- `projected_wins` contains `before`, `after`, and `net_difference` (after minus
-  before). Positive means an increase in estimated wins; negative means a loss.
-- `payroll` contains `before`, `after`, `net_difference`, `currency`, `basis`,
-  and lists of players whose actual or estimated salaries are missing.
-- `legality` reports `status`, `is_legal`, `checks`, and `not_checked`.
-- `meta` identifies the season, historical roster source, minutes basis, and
-  warnings about the simulation's limits.
-
-For example, one team's result has this shape (illustrative numbers):
+For example, the financial fields can look like this:
 
 ```json
 {
-  "team_id": 1,
-  "abbreviation": "LAL",
-  "name": "Los Angeles Lakers",
-  "roster_before": [1, 3, 5],
-  "roster_after": [2, 3, 5],
-  "outgoing_player_ids": [1],
-  "incoming_player_ids": [2],
-  "projected_wins": {"before": 40.5, "after": 42.0, "net_difference": 1.5},
   "payroll": {
     "currency": "USD",
-    "basis": "actual_retained_plus_estimated_incoming",
-    "before": null,
-    "after": null,
-    "net_difference": null,
-    "missing_actual_before": [1, 3, 5],
-    "missing_actual_after": [3, 5],
-    "missing_estimated_after": [2]
+    "basis": "contract_value_assumed_annual_usd",
+    "before": "150000000.00",
+    "after": "155000000.00",
+    "net_difference": "5000000.00",
+    "missing_actual_before": [],
+    "missing_actual_after": []
+  },
+  "salary_cap": {
+    "currency": "USD",
+    "basis": "cap_minus_payroll_and_supplied_other_charges",
+    "is_estimate": true,
+    "limit": "164961000.00",
+    "minimum_team_salary": "148465000.00",
+    "first_apron": "209015000.00",
+    "second_apron": "221686000.00",
+    "other_cap_charges": "0.00",
+    "other_cap_charges_confirmed": false,
+    "before": "14961000.00",
+    "after": "9961000.00",
+    "net_difference": "-5000000.00"
   }
 }
 ```
 
-The full response includes both teams and their complete roster ID lists.
-Dollar totals will be decimal strings with two places, not floating-point
-numbers; unavailable values are JSON null. Never display null as zero.
+`salary_cap.before`/`after` mean estimated **space under the cap**; the league's
+cap limit itself does not change in a trade. Negative space means over the cap.
+It does not automatically make a trade illegal. Differences always mean after
+minus before. Dollar values are decimal strings with two places. Incomplete
+totals are null, never partial sums or zero.
 
-## Historical rosters and minutes
+## Salary and roster assumptions
 
-`backend/services/trade_data.py` owns roster loading. It includes every player
-with a membership record for the team in the selected season. Statistics use
-each player's full-season minutes across all teams, matching the standalone
-roster projection endpoint's data basis. Those minutes and LEBRON ratings stay
-fixed when the player moves. This does not predict a new rotation or reproduce
-the original team's exact distribution of minutes.
+For this increment, `player_seasons.contract_value` is provisionally treated as
+annual USD salary, as requested. Actual contract salary follows the player;
+estimated market values are never substituted for salary matching. The mapping
+is isolated in `backend/services/trade_data.py` for later replacement.
+`to_jsonb(ps)->>'contract_value'` also supports older databases without that
+column: salary is null instead of a query failure. No schema migration is needed.
 
-Some historical rosters overlap because a player appeared for both teams in one
-season. This version blocks the simulation and lists the shared player IDs;
-it does not guess which team currently owns that player or count them twice.
-Chase's current-roster function can replace the loader later. It should return
-the same internal IDs and roster records, with matching season statistics, and
-the route's `roster_source` metadata must be updated with it.
+The cap adapter always uses `TRADE_SEASON_START_YEAR = 2026`, independently of
+which database season supplies the model inputs. No 2026–27 database season row
+is required just to apply these limits, and existing season records are not
+relabelled. The API does not accept a trade-season override.
 
-Missing/nonfinite LEBRON ratings or missing/negative/nonfinite minutes block
-projection rather than silently dropping players. Zero-minute players are
-allowed if the full roster still has positive minutes. Each before/after roster
-must be nonempty. Historical lists may exceed 15 players, so the standalone
-projection endpoint's 12–15 input limit is not imposed on this simulation.
-These are model/data checks, not official roster-size eligibility rules.
+The user-supplied settings are a $164,961,000 cap, $148,465,000 minimum team
+salary, $209,015,000 first apron, and $221,686,000 second apron. The response
+exposes `salary_cap.minimum_team_salary` as information; minimum-payroll
+compliance is not implemented as a trade restriction.
 
-Win estimates use Chase's existing function unchanged, including its 0–82
-clamp. Differences are calculated from unrounded model outputs. The model is
-nonlinear: one team's improvement does not have to equal the other's loss.
+Historical ratings can be inputs to the upcoming-season estimate, but this
+does not turn historical roster or salary records into confirmed 2026–27 data.
+Those adapters still need authoritative upcoming-season membership and salaries.
 
-## Payroll basis and Vincent's integration
+Cap space and matching currently use roster salaries with zero additional
+charges. This is an explicit **roster-only estimate**: cap holds, dead money,
+incentives, and other cap/apron adjustments are not in the database adapter.
+The adapter can later supply `other_cap_charges`; a complete implementation also
+needs distinct cap and apron salary calculations.
 
-Before the trade, add the actual annual salaries of all players on that team's
-starting roster. After the trade, add actual salaries of retained players and
-estimated salaries of incoming players. Outgoing players are removed. Then
-calculate `after - before` when both totals are available.
+Rosters still use historical season membership, not an authoritative current
+roster feed. The new model helper on main also reads historical membership and
+cannot resolve current ownership. A player shared by participating rosters
+blocks the simulation instead of being counted twice. Replacing the roster
+adapter requires replacing candidate ownership and source metadata too.
 
-This is a custom projected payroll comparison. An estimate does not replace a
-player's real contract or determine cap space. Salary-cap restrictions are not
-implemented. No league cap, tax, dead money, bonuses, or cap holds are included.
+The model uses fixed full-season minutes across all team stints and Chase's
+unchanged win calculation. It does not predict a new rotation. Tied minutes
+are consistently ordered by player ID. Every before/after roster must have
+finite ratings, nonnegative minutes, and positive total minutes. Historical
+rosters can exceed 15 players; their counts cannot prove NBA roster legality.
 
-The test database has `player_seasons.contract_value`, but its meaning has not
-been confirmed. The loader deliberately sets actual salary to None until the
-team confirms the source, units, and season. A new database column is not needed
-for this feature, and no schema files were changed.
+## Legality function
 
-Once confirmed, map actual annual USD salaries into each loader record's
-`actual_salary`. Vincent's estimates should be supplied by
-`load_estimated_salaries(player_ids, season_id)` as a dictionary keyed by internal
-player ID. It currently returns None for each incoming player. Estimates should
-be for the selected season and in USD, using Decimal values or decimal strings.
+`backend/services/trade_legality.py:check_trade` runs for every simulation.
+It checks disjoint rosters and outgoing ownership, then evaluates each team's
+cap room or ordinary simultaneous salary matching. Post-trade apron position
+controls expanded matching and the allowance. Above the second apron, it
+searches for matches using separate outgoing contracts rather than rejecting
+all trades with multiple outgoing players. Search exhaustion returns unknown.
 
-An incomplete total is null, not a partial sum. Each side reports the exact IDs
-missing actual salaries before/after or incoming estimates after. Missing
-payroll values do not block win projections. Invalid or negative salary values
-are treated as unavailable; a known zero is valid. If a missing actual salary
-belongs only to an outgoing player, a complete after total can still be shown.
+Rules follow Article VII, Sections 2(e) and 6(j) of the
+[2023 NBA–NBPA CBA](https://nbpa.com/cba). The
+[NBA's CBA guide](https://cms.nba.com/wp-content/uploads/sites/4/2024/11/2024-25-CBA-101.pdf)
+provides a matching overview. The active 2026–27 cap and apron figures were
+supplied by the user; older settings retained in the code are not selected by
+the trade API.
 
-## Legality and errors
+The checker supports cap room plus the applicable allowance, the expanded
+simultaneous exception below the first apron, no salary increase above the
+first apron, and nonaggregated matching above the second apron. It evaluates
+one combined matching package per team below the second apron; it does not
+optimize arbitrary combinations of exceptions or prior trade exceptions.
 
-Basic request validation checks team/ID formats, duplicate players, and supported
-assets. The returned legality section checks disjoint starting rosters and that
-outgoing players belong to the loaded historical roster. These are simulation
-consistency checks, not a complete NBA contract-eligibility check.
+Read these fields in `data.legality`:
 
-If roster checks fail, HTTP 200 returns `analysis_available: false`, `teams: []`,
-and `legality.status: "failed"` with the affected IDs. Otherwise the status is
-`"incomplete"`. **`legality.is_legal` is always null in this version**, including
-failed historical-roster checks, because current NBA legality is not established.
+- `checks`: codes, team IDs, `passed` (true/false/null), messages, and matching
+  amounts where available. Null means the check could not be evaluated.
+- `passes_supported_rules`: false for any failure, null if required inputs are
+  missing, true only if every supported check passes under the stated assumptions.
+- `status`: `failed` for a supported-rule failure; otherwise `incomplete`.
+- `is_legal`: null because provisional data and missing rules do not establish
+  full NBA approval, even when a supported check fails.
+- `not_checked`: explicit gaps including authoritative ownership, contract
+  restrictions/consent, existing hard caps, exceptions, dates, and roster types.
 
-Malformed requests return 400; non-JSON requests return 415. Unknown teams or
-season return 404. Missing team roster data or unusable model inputs return 422.
-Database failures use the existing 503 response. Error responses use the usual
-error envelope; they do not return partial predictions.
+Salary failures retain projections. Ownership failures return HTTP 200 with
+`analysis_available: false` and `teams: []`. Bad request shapes return 400;
+non-JSON bodies return 415; missing teams/seasons return 404; missing roster or
+projection inputs return 422; database failures return 503. Never label an
+incomplete result “legal.”
 
-The official [NBA–NBPA CBA](https://nbpa.com/cba) contains date- and
-contract-dependent provisions in Article VII, Section 8 and Article XXIV.
-The current schema lacks the inputs to evaluate them accurately. This version
-does not invent blanket signing waits, no-trade-clause rules, or roster limits.
+## Verification and remaining integration
 
-## To do
+Run `venv/bin/python -m pytest -q` (or your activated environment's Python).
+Tests cover cycles, multiple destinations, conservation, ordering, target ranking,
+missing data, matching boundaries, apron crossings, and API validation.
 
-- Replace historical membership with Chase's authoritative current rosters.
-- Confirm actual annual salary mapping and connect Vincent's incoming estimates.
-- Add **salary matching, salary-cap restrictions, apron/tax checks**, and required
-  actual-contract data. Keep those calculations separate from estimated payroll.
-- Add dated contract restrictions, player consent, trade deadlines, and contract
-  types after obtaining the necessary data and verifying each applicable rule.
-- Add roster-size eligibility checks with the correct date and contract context.
-- Add picks, protections, ownership, cash, and additional teams in later versions.
-- Connect Elias's trade UI and add team/season IDs to its API helper.
+An October 16, 2026 read-only check of the configured database returned a
+21-player historical roster and 15 targets for season 1 (2025–26). Four roster
+players had missing contract values, so payroll/cap totals correctly stayed
+null. This confirms the query integration, not current roster accuracy.
 
-## Try it locally
-
-Start Flask on port 5001. These IDs worked in the development database check;
-use IDs from your database if it differs:
-
-```sh
-curl -sS http://localhost:5001/api/trade/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"season_id":1,"team_a_id":1,"team_b_id":2,"team_a_sends":{"player_ids":[1]},"team_b_sends":{"player_ids":[2]}}'
-```
-
-The read-only check exchanged one player each between historical LAL and LAC
-rosters. It returned HTTP 200 with both win comparisons and null payroll fields.
-This verifies integration, not NBA legality or prediction accuracy.
+Before presenting results as current NBA legality, connect authoritative dated
+rosters, fill salary gaps, confirm annual contract units, and add the contract,
+exception, cap-accounting, roster, and date inputs listed in `not_checked`.
