@@ -1,6 +1,7 @@
 # Check API responses and database cleanup without contacting a real database.
 
 from unittest.mock import MagicMock
+from decimal import Decimal
 
 import psycopg2
 import pytest
@@ -144,3 +145,46 @@ def test_cors_environment_accepts_spaces_and_empty_entries(monkeypatch):
     for origin in ("http://localhost:5173", "http://localhost:3000"):
         response = client.get("/api/health", headers={"Origin": origin})
         assert response.headers["Access-Control-Allow-Origin"] == origin
+
+
+def test_player_detail_includes_season_stats(client, monkeypatch):
+    player = {"id": 7, "name": "Sample Player", "external_id": "123"}
+    season = {
+        "season_id": 1, "start_year": 2025, "end_year": 2026, "teams": ["BOS", "LAL"],
+        "games_played": 70, "minutes_played": Decimal("2100.50"),
+        "lebron": Decimal("1.2500"), "offensive_lebron": Decimal("0.7500"),
+        "defensive_lebron": None,
+    }
+    query = MagicMock(side_effect=[[player], [season]])
+    monkeypatch.setattr(catalog, "query", query)
+    response = client.get("/api/players/7")
+    assert response.status_code == 200
+    assert response.json["data"]["seasons"] == [{
+        **season, "minutes_played": 2100.5, "lebron": 1.25, "offensive_lebron": 0.75,
+    }]
+    assert response.json["data"]["salary"] is None
+    assert response.json["data"]["team"] is None
+    assert query.call_args.args[1] == (7,)
+
+
+@pytest.mark.parametrize("seasons", [[], [{
+    "season_id": 1, "start_year": 2025, "end_year": 2026, "teams": [],
+    "games_played": None, "minutes_played": None, "lebron": None,
+    "offensive_lebron": None, "defensive_lebron": None,
+}]])
+def test_player_detail_preserves_missing_season_data(client, monkeypatch, seasons):
+    player = {"id": 7, "name": "Sample Player", "external_id": "123"}
+    monkeypatch.setattr(catalog, "query", MagicMock(side_effect=[[player], seasons]))
+    response = client.get("/api/players/7")
+    assert response.status_code == 200
+    assert response.json["data"]["seasons"] == seasons
+
+
+def test_player_detail_season_failure_uses_database_error(client, monkeypatch):
+    player = {"id": 7, "name": "Sample Player", "external_id": "123"}
+    monkeypatch.setattr(catalog, "query", MagicMock(side_effect=[
+        [player], psycopg2.OperationalError("connection failed"),
+    ]))
+    response = client.get("/api/players/7")
+    assert response.status_code == 503
+    assert response.json["error"]["code"] == "DATABASE_UNAVAILABLE"

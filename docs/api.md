@@ -84,7 +84,14 @@ Use actual IDs from `/seasons`; the example does not assert which year ID 1 mean
 ```
 
 Example data is illustrative. Results use database IDs, not external provider IDs.
-`/players/<id>` returns one object of the same shape and empty metadata.
+`/players/<id>` returns one object of the same shape, plus a `seasons` list,
+and empty metadata. Seasons are newest first and contain `season_id`,
+`start_year`, `end_year`, `teams`, `games_played`, `minutes_played`, `lebron`,
+`offensive_lebron`, and `defensive_lebron`. Games and minutes are summed across
+team stints. Team abbreviations are ordered by minutes descending, then
+alphabetically for ties. Ratings and minutes are JSON numbers; missing stats
+remain null. A season without team stints has `teams: []`; a player without
+season records has `seasons: []`. These teams describe historical membership.
 An ID of zero or above 2147483647 returns 400. A valid ID with no player returns
 404. The integer URL route does not match negative or nonnumeric IDs (404).
 `/teams` returns `id`, `abbreviation`, `team_name`, `city`.

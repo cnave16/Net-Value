@@ -122,4 +122,37 @@ def player(player_id):
     )
     if not rows:
         raise NotFound("Player not found.")
-    return success(player_response(rows[0]))
+    return success({**player_response(rows[0]), "seasons": player_seasons(player_id)})
+
+
+def number(value):
+    # NUMERIC columns arrive as Decimal; keep missing values null in JSON.
+    return None if value is None else float(value)
+
+
+def player_seasons(player_id):
+    # Combine team stints so traded players still get one row per season.
+    rows = query(
+        "SELECT s.season_id, s.start_year, s.end_year, ps.lebron, "
+        "ps.offensive_lebron, ps.defensive_lebron, "
+        "SUM(pts.games_played) AS games_played, SUM(pts.minutes_played) AS minutes_played, "
+        "ARRAY_REMOVE(ARRAY_AGG(t.abbreviation ORDER BY pts.minutes_played DESC NULLS LAST, "
+        "t.abbreviation), NULL) AS teams "
+        "FROM player_seasons ps JOIN seasons s ON s.season_id = ps.season_id "
+        "LEFT JOIN player_team_seasons pts ON pts.player_season_id = ps.player_season_id "
+        "LEFT JOIN teams t ON t.team_id = pts.team_id "
+        "WHERE ps.player_id = %s "
+        "GROUP BY s.season_id, s.start_year, s.end_year, ps.lebron, "
+        "ps.offensive_lebron, ps.defensive_lebron "
+        "ORDER BY s.start_year DESC, s.end_year DESC, s.season_id DESC",
+        (player_id,),
+    )
+    return [{
+        "season_id": row["season_id"], "start_year": row["start_year"],
+        "end_year": row["end_year"], "teams": row["teams"],
+        "games_played": None if row["games_played"] is None else int(row["games_played"]),
+        "minutes_played": number(row["minutes_played"]),
+        "lebron": number(row["lebron"]),
+        "offensive_lebron": number(row["offensive_lebron"]),
+        "defensive_lebron": number(row["defensive_lebron"]),
+    } for row in rows]
