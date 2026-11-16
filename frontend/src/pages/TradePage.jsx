@@ -294,6 +294,9 @@ export default function TradePage() {
   const [copied, setCopied] = useState(false)
   // Teams whose roster has been requested; rosters are cached for the session.
   const requested = useRef(new Set())
+  const analysisVersion = useRef(0)
+
+  useEffect(() => () => { analysisVersion.current += 1 }, [])
 
   useEffect(() => {
     if (USE_MOCK) return
@@ -368,6 +371,8 @@ export default function TradePage() {
   const abbreviations = Object.fromEntries(teams.map((t) => [t.id, t.abbreviation]))
 
   function changed(nextMoves) {
+    // Ignore pending responses once the trade they describe has changed.
+    analysisVersion.current += 1
     setMoves(nextMoves)
     setResult(idle)
   }
@@ -438,6 +443,11 @@ export default function TradePage() {
     changed({ ...moves, [target.player.player_id]: { from: owner, to: toId } })
   }
 
+  function addTeam() {
+    setSlots([...slots, newSlot()])
+    changed(moves)
+  }
+
   function reset() {
     setSlots([newSlot(), newSlot()])
     changed({})
@@ -453,10 +463,15 @@ export default function TradePage() {
   }
 
   function analyze() {
+    const version = ++analysisVersion.current
     setResult({ status: 'loading' })
     analyzeTrade({ seasonId: season.id, teamIds, transfers: moveList })
-      .then(({ data, meta }) => setResult({ status: 'ready', data, meta }))
-      .catch((error) => setResult({ status: 'error', error }))
+      .then(({ data, meta }) => {
+        if (version === analysisVersion.current) setResult({ status: 'ready', data, meta })
+      })
+      .catch((error) => {
+        if (version === analysisVersion.current) setResult({ status: 'error', error })
+      })
   }
 
   if (USE_MOCK) {
@@ -514,7 +529,7 @@ export default function TradePage() {
           {result.status === 'loading' ? 'Analyzing…' : 'Analyze trade'}
         </button>
         {slots.length < MAX_TEAMS && (
-          <button type="button" className="trade-secondary" onClick={() => setSlots([...slots, newSlot()])}>
+          <button type="button" className="trade-secondary" onClick={addTeam}>
             Add team
           </button>
         )}
