@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { analyzeTrade, getSeasons, getTeams, getTradeTeam, USE_MOCK } from '../services/api.js'
 import { formatMoney, formatSeason } from '../services/format.js'
 
-// Two-team trade builder. The backend accepts 2–30 teams; two covers the common case.
-// Checked players move to the other team; analysis runs on the selected season's data.
+// Multi-team trade builder. Each checked player moves from their roster to a chosen
+// destination; the backend accepts 2–30 teams, the UI caps it at MAX_TEAMS for legibility.
+// The trade lives in the URL (?t=teamIds&m=player-from-to,...) so it can be shared.
+
+const MAX_TEAMS = 5
+const TARGETS_SHOWN = 5
 
 function signed(value, digits = 1) {
   if (value == null) return '—'
@@ -19,49 +24,172 @@ function tone(value) {
 // Money arrives as decimal strings; null means unavailable, never zero.
 const dollars = (value) => (value == null ? null : Number(value))
 
-function TeamColumn({ label, teams, teamId, otherTeamId, onTeamChange, roster, selected, onToggle }) {
-  const players = roster.status === 'ready'
-    ? [...roster.team.roster].sort((a, b) => (b.minutes ?? 0) - (a.minutes ?? 0))
+// Sum salaries, or null if any is missing: a partial total would understate payroll.
+function salaryTotal(players) {
+  let total = 0
+  for (const p of players) {
+    if (p.actual_salary == null) return null
+    total += Number(p.actual_salary)
+  }
+  return total
+}
+
+let slotKey = 0
+const newSlot = (teamId = null) => ({ key: slotKey++, teamId })
+
+const positiveInt = (s) => (/^\d+$/.test(s) && Number(s) > 0 ? Number(s) : null)
+
+// Read ?t=1,2&m=101-1-2 into slots and moves, dropping anything inconsistent.
+function parseTradeParams(params, knownTeamIds) {
+  const teamIds = [...new Set((params.get('t') ?? '').split(',').map(positiveInt))]
+    .filter((id) => id && knownTeamIds.has(id))
+    .slice(0, MAX_TEAMS)
+  const moves = {}
+  for (const part of (params.get('m') ?? '').split(',')) {
+    const [playerId, from, to] = part.split('-').map(positiveInt)
+    if (playerId && teamIds.includes(from) && teamIds.includes(to) && from !== to) {
+      moves[playerId] = { from, to }
+    }
+  }
+  const slots = teamIds.map(newSlot)
+  while (slots.length < 2) slots.push(newSlot())
+  return { slots, moves }
+}
+
+function TeamColumn({
+  index, slot, teams, takenIds, tradeTeamIds, roster, moves, players, canRemove,
+  onTeamChange, onRemove, onToggle, onDestination, onRequestTarget, canRequest,
+}) {
+  const [showAllTargets, setShowAllTargets] = useState(false)
+  const teamId = slot.teamId
+  const team = roster?.status === 'ready' ? roster.team : null
+  const rosterPlayers = team
+    ? [...team.roster].sort((a, b) => (b.minutes ?? 0) - (a.minutes ?? 0))
     : []
+  const outgoing = rosterPlayers.filter((p) => moves[p.player_id]?.from === teamId)
+  const incoming = Object.entries(moves)
+    .filter(([, m]) => m.to === teamId)
+    .map(([id]) => players[id]?.player)
+    .filter(Boolean)
+  const destinations = tradeTeamIds.filter((id) => id !== teamId)
+  const abbreviation = (id) => teams.find((t) => t.id === id)?.abbreviation ?? `#${id}`
+  const targets = team?.targets ?? []
+  const shownTargets = showAllTargets ? targets : targets.slice(0, TARGETS_SHOWN)
+
   return (
     <div className="trade-team">
-      <small className="section-label">{label}</small>
+      <div className="trade-team-header">
+        <small className="section-label">Team {String.fromCharCode(65 + index)}</small>
+        {canRemove && (
+          <button type="button" className="link-button" onClick={onRemove}>Remove</button>
+        )}
+      </div>
       <select
         className="trade-select"
         value={teamId ?? ''}
         onChange={(e) => onTeamChange(e.target.value ? Number(e.target.value) : null)}
       >
         <option value="">Select a team</option>
-        {teams.map((team) => (
-          <option key={team.id} value={team.id} disabled={team.id === otherTeamId}>
-            {team.abbreviation} · {team.name}
+        {teams.map((t) => (
+          <option key={t.id} value={t.id} disabled={t.id !== teamId && takenIds.includes(t.id)}>
+            {t.abbreviation} · {t.team_name}
           </option>
         ))}
       </select>
-      {roster.status === 'loading' && <p className="muted">Loading roster…</p>}
-      {roster.status === 'error' && <p className="error">{roster.error.message}</p>}
-      {roster.status === 'ready' && (
+      {roster?.status === 'loading' && <p className="muted">Loading roster…</p>}
+      {roster?.status === 'error' && <p className="error">{roster.error.message}</p>}
+      {team && (
         <>
           <div className="trade-team-summary">
-            <div><small>Projected wins</small><strong>{roster.team.projected_wins.toFixed(1)}</strong></div>
-            <div><small>Payroll</small><strong>{formatMoney(dollars(roster.team.payroll.before), 'Incomplete')}</strong></div>
+            <div><small>Projected wins</small><strong>{team.projected_wins.toFixed(1)}</strong></div>
+            <div><small>Payroll</small><strong>{formatMoney(dollars(team.payroll.before), 'Incomplete')}</strong></div>
           </div>
+
+          {(outgoing.length > 0 || incoming.length > 0) && (
+            <div className="trade-ledger">
+              <div>
+                <small>Sends</small>
+                <strong>{formatMoney(salaryTotal(outgoing), 'Incomplete')}</strong>
+                <span className="fine muted">{outgoing.map((p) => p.name).join(', ') || 'Nothing'}</span>
+              </div>
+              <div>
+                <small>Receives</small>
+                <strong>{formatMoney(salaryTotal(incoming), 'Incomplete')}</strong>
+                <span className="fine muted">{incoming.map((p) => p.name).join(', ') || 'Nothing'}</span>
+              </div>
+            </div>
+          )}
+
           <ul className="trade-roster">
-            {players.map((player) => (
-              <li key={player.player_id}>
-                <label className={selected.has(player.player_id) ? 'checked' : ''}>
-                  <input
-                    type="checkbox"
-                    checked={selected.has(player.player_id)}
-                    onChange={() => onToggle(player.player_id)}
-                  />
-                  <span className="trade-player-name">{player.name}</span>
-                  <span className="trade-player-meta">{Math.round(player.minutes ?? 0)} min</span>
-                  <span className="trade-player-meta">{formatMoney(dollars(player.actual_salary), 'No salary')}</span>
-                </label>
-              </li>
-            ))}
+            {rosterPlayers.map((player) => {
+              const move = moves[player.player_id]
+              const checked = move?.from === teamId
+              return (
+                <li key={player.player_id} className={checked ? 'checked' : ''}>
+                  <label>
+                    <input type="checkbox" checked={checked} onChange={() => onToggle(player.player_id)} />
+                    <span className="trade-player-name">{player.name}</span>
+                    <span className="trade-player-meta">{Math.round(player.minutes ?? 0)} min</span>
+                    <span className="trade-player-meta">{formatMoney(dollars(player.actual_salary), 'No salary')}</span>
+                  </label>
+                  {checked && destinations.length > 0 && (destinations.length > 1 || move.to == null) && (
+                    <div className="trade-destination">
+                      <span>To</span>
+                      <select
+                        value={move.to ?? ''}
+                        onChange={(e) => onDestination(player.player_id, e.target.value ? Number(e.target.value) : null)}
+                      >
+                        {move.to == null && <option value="">Choose…</option>}
+                        {destinations.map((id) => <option key={id} value={id}>{abbreviation(id)}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </li>
+              )
+            })}
           </ul>
+
+          {targets.length > 0 && (
+            <div className="trade-targets">
+              <small className="section-label">Top targets</small>
+              <p className="fine muted">Projected win change from adding one player, before sending anyone back.</p>
+              <ol>
+                {shownTargets.map((target) => {
+                  const id = target.player.player_id
+                  const owner = target.team_id
+                  const alreadyMoving = moves[id]?.to === teamId
+                  const reason = owner == null
+                    ? 'Played for several teams last season, so the current owner is unclear.'
+                    : !canRequest(owner)
+                      ? `Trade is limited to ${MAX_TEAMS} teams.`
+                      : null
+                  return (
+                    <li key={id}>
+                      <span className="trade-player-name">{target.player.name}</span>
+                      <span className="trade-player-meta">{owner == null ? 'Multiple' : abbreviation(owner)}</span>
+                      <span className={`trade-target-gain ${tone(target.projected_wins.net_difference)}`}>
+                        {signed(target.projected_wins.net_difference)} W
+                      </span>
+                      <button
+                        type="button"
+                        className="link-button"
+                        disabled={alreadyMoving || reason != null}
+                        title={reason ?? undefined}
+                        onClick={() => onRequestTarget(target)}
+                      >
+                        {alreadyMoving ? 'Added' : 'Add'}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ol>
+              {targets.length > TARGETS_SHOWN && (
+                <button type="button" className="link-button" onClick={() => setShowAllTargets((v) => !v)}>
+                  {showAllTargets ? 'Show fewer' : `Show all ${targets.length}`}
+                </button>
+              )}
+            </div>
+          )}
         </>
       )}
     </div>
@@ -87,7 +215,7 @@ function TeamResult({ team, names }) {
         <div className="stat"><small>Payroll after</small><strong>{formatMoney(dollars(payroll.after), '—')}</strong></div>
         <div className="stat"><small>Cap space after</small><strong>{formatMoney(dollars(cap.after), '—')}</strong></div>
       </div>
-      {(payroll.after == null) && (
+      {payroll.after == null && (
         <p className="fine muted">Payroll is incomplete: some players have no salary on file.</p>
       )}
     </div>
@@ -129,15 +257,18 @@ function Legality({ legality, abbreviations }) {
 const idle = { status: 'idle' }
 
 export default function TradePage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [teams, setTeams] = useState([])
   const [season, setSeason] = useState(null)
   const [loadError, setLoadError] = useState(null)
-  const [teamIds, setTeamIds] = useState([null, null])
-  const [rosters, setRosters] = useState([idle, idle])
-  const [selected, setSelected] = useState([new Set(), new Set()])
+  const [hydrated, setHydrated] = useState(false)
+  const [slots, setSlots] = useState(() => [newSlot(), newSlot()])
+  const [rosters, setRosters] = useState({}) // teamId -> { status, team | error }
+  const [moves, setMoves] = useState({}) // playerId -> { from, to }
   const [result, setResult] = useState(idle)
-  // Latest team per side, so a slow roster response for a replaced team is ignored.
-  const latestTeamIds = useRef([null, null])
+  const [copied, setCopied] = useState(false)
+  // Teams whose roster has been requested; rosters are cached for the session.
+  const requested = useRef(new Set())
 
   useEffect(() => {
     if (USE_MOCK) return
@@ -145,58 +276,162 @@ export default function TradePage() {
       .then(([teamsRes, seasonsRes]) => {
         setTeams(teamsRes.data)
         setSeason(seasonsRes.data[0] ?? null) // newest first
+        const restored = parseTradeParams(searchParams, new Set(teamsRes.data.map((t) => t.id)))
+        setSlots(restored.slots)
+        setMoves(restored.moves)
+        setHydrated(true)
       })
       .catch(setLoadError)
+    // Read the URL once on load; afterwards the page writes it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  function chooseTeam(side, teamId) {
-    latestTeamIds.current[side] = teamId
-    setTeamIds((ids) => ids.map((id, i) => (i === side ? teamId : id)))
-    setSelected((sets) => sets.map((set, i) => (i === side ? new Set() : set)))
-    setResult(idle)
-    if (!teamId) {
-      setRosters((rs) => rs.map((r, i) => (i === side ? idle : r)))
-      return
+  useEffect(() => {
+    if (!season) return
+    for (const { teamId } of slots) {
+      if (!teamId || requested.current.has(teamId)) continue
+      requested.current.add(teamId)
+      setRosters((r) => ({ ...r, [teamId]: { status: 'loading' } }))
+      getTradeTeam(teamId, season.id)
+        .then(({ data }) => ({ status: 'ready', team: data }))
+        .catch((error) => {
+          requested.current.delete(teamId) // allow a retry by reselecting the team
+          return { status: 'error', error }
+        })
+        .then((roster) => setRosters((r) => ({ ...r, [teamId]: roster })))
     }
-    setRosters((rs) => rs.map((r, i) => (i === side ? { status: 'loading' } : r)))
-    getTradeTeam(teamId, season.id)
-      .then(({ data }) => ({ status: 'ready', team: data }))
-      .catch((error) => ({ status: 'error', error }))
-      .then((roster) => {
-        if (latestTeamIds.current[side] !== teamId) return
-        setRosters((rs) => rs.map((r, i) => (i === side ? roster : r)))
-      })
+  }, [slots, season])
+
+  const teamIds = slots.map((s) => s.teamId).filter(Boolean)
+
+  // Keep the URL in sync so the current trade can be shared or bookmarked.
+  useEffect(() => {
+    if (!hydrated) return
+    const params = {}
+    if (teamIds.length) params.t = teamIds.join(',')
+    const encoded = Object.entries(moves)
+      .filter(([, m]) => m.to != null)
+      .map(([id, m]) => `${id}-${m.from}-${m.to}`)
+    if (encoded.length) params.m = encoded.join(',')
+    setSearchParams(params, { replace: true })
+    // teamIds and the URL setter derive from these; listing them would loop.
+  }, [hydrated, slots, moves]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Every player on a loaded participating roster, plus anyone listed on two of them.
+  const players = {}
+  const shared = []
+  for (const id of teamIds) {
+    const roster = rosters[id]
+    if (roster?.status !== 'ready') continue
+    for (const player of roster.team.roster) {
+      const seen = players[player.player_id]
+      if (seen && seen.teamId !== id) shared.push({ player, teams: [seen.teamId, id] })
+      else players[player.player_id] = { player, teamId: id }
+    }
   }
 
-  function togglePlayer(side, playerId) {
-    setSelected((sets) => sets.map((set, i) => {
-      if (i !== side) return set
-      const next = new Set(set)
-      if (next.has(playerId)) next.delete(playerId)
-      else next.add(playerId)
-      return next
-    }))
+  const ready = slots.length >= 2 && slots.every((s) => s.teamId && rosters[s.teamId]?.status === 'ready')
+  // Only moves whose player is actually on the source roster count (guards stale links).
+  const moveList = Object.entries(moves)
+    .filter(([id, m]) => players[id]?.teamId === m.from)
+    .map(([id, m]) => ({ player_id: Number(id), from_team_id: m.from, to_team_id: m.to }))
+  const undirected = moveList.filter((m) => m.to_team_id == null)
+  const uninvolved = teamIds.filter((id) => !moveList.some((m) => m.from_team_id === id || m.to_team_id === id))
+  const canAnalyze = ready && moveList.length > 0 && undirected.length === 0
+    && uninvolved.length === 0 && shared.length === 0 && result.status !== 'loading'
+
+  const abbreviations = Object.fromEntries(teams.map((t) => [t.id, t.abbreviation]))
+  const names = Object.fromEntries(Object.entries(players).map(([id, { player }]) => [id, player.name]))
+
+  function changed(nextMoves) {
+    setMoves(nextMoves)
     setResult(idle)
   }
 
-  const [teamA, teamB] = teamIds
-  const ready = rosters.every((r) => r.status === 'ready')
-  const moving = selected[0].size + selected[1].size
-  // The roster data is last season's, so a player traded mid-season is listed on both
-  // teams. The backend rejects any trade between two such teams, so catch it up front.
-  const shared = ready
-    ? rosters[0].team.roster.filter((a) => rosters[1].team.roster.some((b) => b.player_id === a.player_id))
-    : []
-  const canAnalyze = ready && moving > 0 && shared.length === 0 && result.status !== 'loading'
+  // Replace oldId in the trade: its outgoing picks go, players headed to it follow newId.
+  function retarget(current, oldId, newId) {
+    const next = {}
+    for (const [id, m] of Object.entries(current)) {
+      if (m.from === oldId) continue
+      if (m.to === oldId) {
+        if (newId && newId !== m.from) next[id] = { ...m, to: newId }
+        continue
+      }
+      next[id] = m
+    }
+    return next
+  }
+
+  function setSlotTeam(key, teamId) {
+    const slot = slots.find((s) => s.key === key)
+    const nextSlots = slots.map((s) => (s.key === key ? { ...s, teamId } : s))
+    const nextIds = nextSlots.map((s) => s.teamId).filter(Boolean)
+    const next = retarget(moves, slot.teamId, teamId)
+    // Players checked before a second team existed now get a destination.
+    for (const [id, m] of Object.entries(next)) {
+      if (m.to == null) next[id] = { ...m, to: defaultDestination(m.from, nextIds) }
+    }
+    setSlots(nextSlots)
+    changed(next)
+  }
+
+  function removeSlot(key) {
+    const slot = slots.find((s) => s.key === key)
+    setSlots(slots.filter((s) => s.key !== key))
+    changed(retarget(moves, slot.teamId, null))
+  }
+
+  // Default destination: the next team after the source, in slot order.
+  function defaultDestination(fromId, ids = teamIds) {
+    if (ids.length < 2) return null
+    return ids[(ids.indexOf(fromId) + 1) % ids.length]
+  }
+
+  function togglePlayer(fromId, playerId) {
+    const next = { ...moves }
+    if (next[playerId]?.from === fromId) delete next[playerId]
+    else next[playerId] = { from: fromId, to: defaultDestination(fromId) }
+    changed(next)
+  }
+
+  function setDestination(playerId, to) {
+    changed({ ...moves, [playerId]: { ...moves[playerId], to } })
+  }
+
+  const canRequest = (ownerId) =>
+    teamIds.includes(ownerId) || slots.some((s) => !s.teamId) || slots.length < MAX_TEAMS
+
+  // Bring a target into the trade: add the owner's team if needed and route the player here.
+  function requestTarget(toId, target) {
+    const owner = target.team_id
+    if (owner == null || !canRequest(owner)) return
+    if (!teamIds.includes(owner)) {
+      const empty = slots.find((s) => !s.teamId)
+      setSlots(empty
+        ? slots.map((s) => (s.key === empty.key ? { ...s, teamId: owner } : s))
+        : [...slots, newSlot(owner)])
+    }
+    changed({ ...moves, [target.player.player_id]: { from: owner, to: toId } })
+  }
+
+  function reset() {
+    setSlots([newSlot(), newSlot()])
+    changed({})
+  }
+
+  function copyLink() {
+    navigator.clipboard?.writeText(window.location.href)
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      })
+      .catch(() => {})
+  }
 
   function analyze() {
-    const transfers = [
-      ...[...selected[0]].map((id) => ({ player_id: id, from_team_id: teamA, to_team_id: teamB })),
-      ...[...selected[1]].map((id) => ({ player_id: id, from_team_id: teamB, to_team_id: teamA })),
-    ]
     setResult({ status: 'loading' })
-    analyzeTrade({ seasonId: season.id, teamIds: [teamA, teamB], transfers })
-      .then(({ data }) => setResult({ status: 'ready', data }))
+    analyzeTrade({ seasonId: season.id, teamIds, transfers: moveList })
+      .then(({ data, meta }) => setResult({ status: 'ready', data, meta }))
       .catch((error) => setResult({ status: 'error', error }))
   }
 
@@ -209,35 +444,43 @@ export default function TradePage() {
     )
   }
 
-  const names = {}
-  const abbreviations = {}
-  rosters.forEach((r) => {
-    if (r.status !== 'ready') return
-    abbreviations[r.team.team_id] = r.team.abbreviation
-    r.team.roster.forEach((p) => { names[p.player_id] = p.name })
-  })
+  let hint = null
+  if (ready && shared.length === 0) {
+    if (moveList.length === 0) hint = 'Check at least one player to trade.'
+    else if (undirected.length > 0) hint = 'Choose where each checked player goes.'
+    else if (uninvolved.length > 0) {
+      hint = `${uninvolved.map((id) => abbreviations[id]).join(', ')} must send or receive a player.`
+    }
+  }
 
   return (
     <section className="page trade-page">
       <h1>Trade Simulator</h1>
       <p className="muted">
-        Pick two teams and check the players each one sends. Projections use{' '}
+        Pick up to {MAX_TEAMS} teams and check the players each one sends. Projections use{' '}
         {season ? formatSeason(season) : '…'} ratings and minutes; salary rules use the 2026–27 cap.
       </p>
       {loadError && <p className="error">{loadError.message}</p>}
 
       <div className="trade-builder">
-        {[0, 1].map((side) => (
+        {slots.map((slot, index) => (
           <TeamColumn
-            key={side}
-            label={side === 0 ? 'Team A sends' : 'Team B sends'}
+            key={slot.key}
+            index={index}
+            slot={slot}
             teams={teams}
-            teamId={teamIds[side]}
-            otherTeamId={teamIds[1 - side]}
-            onTeamChange={(id) => chooseTeam(side, id)}
-            roster={rosters[side]}
-            selected={selected[side]}
-            onToggle={(id) => togglePlayer(side, id)}
+            takenIds={teamIds}
+            tradeTeamIds={teamIds}
+            roster={slot.teamId ? rosters[slot.teamId] : null}
+            moves={moves}
+            players={players}
+            canRemove={slots.length > 2}
+            onTeamChange={(id) => setSlotTeam(slot.key, id)}
+            onRemove={() => removeSlot(slot.key)}
+            onToggle={(playerId) => togglePlayer(slot.teamId, playerId)}
+            onDestination={setDestination}
+            onRequestTarget={(target) => requestTarget(slot.teamId, target)}
+            canRequest={canRequest}
           />
         ))}
       </div>
@@ -246,13 +489,26 @@ export default function TradePage() {
         <button type="button" className="trade-button" disabled={!canAnalyze} onClick={analyze}>
           {result.status === 'loading' ? 'Analyzing…' : 'Analyze trade'}
         </button>
-        {ready && shared.length === 0 && moving === 0 && <span className="muted">Check at least one player to trade.</span>}
+        {slots.length < MAX_TEAMS && (
+          <button type="button" className="trade-secondary" onClick={() => setSlots([...slots, newSlot()])}>
+            Add team
+          </button>
+        )}
+        {(teamIds.length > 0 || moveList.length > 0) && (
+          <>
+            <button type="button" className="trade-secondary" onClick={copyLink}>
+              {copied ? 'Link copied' : 'Copy link'}
+            </button>
+            <button type="button" className="link-button" onClick={reset}>Reset</button>
+          </>
+        )}
+        {hint && <span className="muted">{hint}</span>}
       </div>
 
       {shared.length > 0 && (
         <p className="error">
-          {shared.map((p) => p.name).join(', ')} played for both {rosters[0].team.abbreviation} and{' '}
-          {rosters[1].team.abbreviation} last season, so the simulator can't split these rosters yet.
+          {shared.map(({ player, teams: [a, b] }) => `${player.name} (${abbreviations[a]} and ${abbreviations[b]})`).join(', ')}{' '}
+          played for more than one of these teams last season, so the simulator can't split these rosters yet.
           Pick a different team.
         </p>
       )}
@@ -260,12 +516,24 @@ export default function TradePage() {
       {result.status === 'ready' && (
         <div className="trade-results">
           {!result.data.analysis_available && (
-            <p className="error">Win projections are unavailable for this trade.</p>
+            <p className="error">
+              {result.data.teams.length === 0
+                ? 'This trade could not be simulated. See the checks below.'
+                : 'Win projections are unavailable for this trade.'}
+            </p>
           )}
-          <div className="trade-builder">
-            {result.data.teams.map((team) => <TeamResult key={team.team_id} team={team} names={names} />)}
-          </div>
+          {result.data.teams.length > 0 && (
+            <div className="trade-builder">
+              {result.data.teams.map((team) => <TeamResult key={team.team_id} team={team} names={names} />)}
+            </div>
+          )}
           <Legality legality={result.data.legality} abbreviations={abbreviations} />
+          {result.meta?.warnings?.length > 0 && (
+            <details className="trade-assumptions">
+              <summary>Assumptions behind these numbers</summary>
+              <ul>{result.meta.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+            </details>
+          )}
         </div>
       )}
     </section>
