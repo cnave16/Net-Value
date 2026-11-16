@@ -52,12 +52,21 @@ SOURCE_TEAMS = {
 }
 
 
+# Source names that differ from ours by more than formatting, after name_key.
+# Found by load_nba_ids.py, which reports a player whose NBA ID already
+# belongs to another row (a duplicate created by a missed match).
+NAME_ALIASES = {
+    "ron holland": "ronald holland",
+}
+
+
 def name_key(name):
     """Normalize a name for matching: 'Ronald Holland II' == 'Ronald Holland Ii'."""
     name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
     name = re.sub(r"[.'’\-]", "", name)
     name = re.sub(r"\b(jr|sr|ii|iii|iv|v)\b", "", name)
-    return " ".join(name.split())
+    name = " ".join(name.split())
+    return NAME_ALIASES.get(name, name)
 
 
 def money(text):
@@ -77,12 +86,27 @@ def two_way_names(text):
     return names
 
 
+LATER_SEASONS = 3  # salary columns after the current season (y2-y4) to keep
+
+
+def cell_salary(row, stat):
+    """Salary in one column, or None if blank. Prefer the numeric sort key,
+    since the text can be wrapped in <em> (non-guaranteed)."""
+    cell = re.search(rf'<td[^>]*data-stat="{stat}"([^>]*)>(.*?)</td>', row, re.S)
+    if not cell:
+        return None
+    sort_key = re.search(r'csk="(\d+)"', cell.group(1))
+    return int(sort_key.group(1)) if sort_key else money(re.sub(r"<[^>]+>", "", cell.group(2)))
+
+
 def parse_contracts_page(text):
     """Return (players, team_total).
 
-    Each player has source_id, name, salary and contract_type. A blank salary is
-    a two-way contract only when the payroll note says so; otherwise the salary
-    is unknown (None) and the team's payroll is reported as incomplete.
+    Each player has source_id, name, salary, later_salaries (the next seasons;
+    None where the contract has ended or the source lists nothing) and
+    contract_type. A blank salary is a two-way contract only when the payroll
+    note says so; otherwise the salary is unknown (None) and the team's payroll
+    is reported as incomplete.
     """
     two_way = two_way_names(text)
     table = text[text.find('id="contracts"'):]
@@ -91,10 +115,7 @@ def parse_contracts_page(text):
         raise ValueError("Contracts table not found; the page layout may have changed.")
     players, team_total = [], None
     for row in re.findall(r"<tr\s*>(.*?)</tr>", table, re.S):
-        # Prefer the numeric sort key; the text can be wrapped in <em> (non-guaranteed).
-        cell = re.search(r'<td[^>]*data-stat="y1"([^>]*)>(.*?)</td>', row, re.S)
-        sort_key = re.search(r'csk="(\d+)"', cell.group(1)) if cell else None
-        salary = int(sort_key.group(1)) if sort_key else money(re.sub(r"<[^>]+>", "", cell.group(2))) if cell else None
+        salary = cell_salary(row, "y1")
         player = re.search(r'data-stat="player" csk="([^"]+)" ><a [^>]*>([^<]+)</a>', row)
         if player:
             name = html.unescape(player.group(2)).strip()
@@ -102,6 +123,9 @@ def parse_contracts_page(text):
             players.append({
                 "source_id": player.group(1), "name": name,
                 "salary": 0 if is_two_way else salary,
+                "later_salaries": [] if is_two_way else [
+                    cell_salary(row, f"y{season}") for season in range(2, LATER_SEASONS + 2)
+                ],
                 "contract_type": "two_way" if is_two_way else "standard",
             })
         elif "Team Totals" in row:
@@ -189,10 +213,10 @@ def load(cursor, pages, matches, retrieved_at):
                 created += 1
             cursor.execute(
                 "INSERT INTO player_contracts (season_start_year, player_id, team_id, cap_salary, "
-                "contract_type, source_player_id, source_url, retrieved_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                (SEASON_START_YEAR, player_id, team_id, p["salary"], p["contract_type"],
-                 p["source_id"], url, retrieved_at),
+                "later_salaries, contract_type, source_player_id, source_url, retrieved_at) "
+                "VALUES (%s, %s, %s, %s, %s::numeric[], %s, %s, %s, %s)",
+                (SEASON_START_YEAR, player_id, team_id, p["salary"], p["later_salaries"],
+                 p["contract_type"], p["source_id"], url, retrieved_at),
             )
     return created
 

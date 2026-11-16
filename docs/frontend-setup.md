@@ -2,8 +2,8 @@
 
 Elias can build team and season selection, player search, and roster win
 projections against the current API. The trade simulator at `/trade` is wired
-to the multi-team trade API, and player valuation returns fair value and salary;
-draft picks still return 501. See
+to the multi-team trade API, player valuation returns fair value and salary, and
+`/draft` shows draft pick value by slot. See
 [the API contract](api.md) for the exact fields.
 
 ## Start the backend
@@ -37,11 +37,11 @@ npm ci
 npm run dev
 ```
 
-The app defaults to sample data. For live backend requests, create or update
-`frontend/.env.local` with:
+The app calls the live backend by default. To work on the UI with sample data
+and no backend, create or update `frontend/.env.local` with:
 
 ```dotenv
-VITE_USE_MOCK=false
+VITE_USE_MOCK=true
 ```
 
 Restart Vite after changing environment settings. Open the address printed by
@@ -61,7 +61,7 @@ part of a production build; hosting will need an API proxy or an explicit API UR
 
 ## Check the combined app
 
-1. Open `/players` with `VITE_USE_MOCK=false` and confirm real names load.
+1. Open `/players` and confirm real names load (sample data is off by default).
 2. Search for a player, select the result, and confirm the detail panel loads.
 3. The detail panel should show fair value, salary, and surplus. A player
    without a 2026–27 contract or without last season's stats explains why a
@@ -110,7 +110,6 @@ roster block the trade in the UI, matching the backend's ownership check.
 | `null` salary, team, or value | Show “Unavailable,” not zero |
 | 400, 413, 415, or 422 | Explain the input or data issue |
 | 503 | Show that the database is unavailable and allow a retry |
-| 501 on picks | Show that the feature is not available yet |
 | Trade `analysis_available: false` | Show the failed roster checks, not predictions |
 
 Player team filters describe historical season membership. The win projection

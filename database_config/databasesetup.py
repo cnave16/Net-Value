@@ -144,6 +144,8 @@ CREATE TABLE IF NOT EXISTS player_contracts (
     -- Salary that counts against the cap. Two-way contracts count as zero;
     -- NULL means the source has not listed a standard contract's salary yet.
     cap_salary NUMERIC(14, 2) CHECK (cap_salary >= 0),
+    -- Salaries for the following seasons, in order; NULL where none is listed.
+    later_salaries NUMERIC(14, 2)[] NOT NULL DEFAULT '{}',
     contract_type VARCHAR(20) NOT NULL
         CHECK (contract_type IN ('standard', 'two_way')),
     CHECK (contract_type = 'standard' OR cap_salary = 0),
@@ -183,6 +185,40 @@ CREATE TABLE IF NOT EXISTS team_cap_sheets (
         REFERENCES teams(team_id)
         ON DELETE CASCADE
 );
+
+-- NBA draft results, loaded by database_config/load_draft.py. player_id is
+-- null for draftees who never reached our players table.
+CREATE TABLE IF NOT EXISTS draft_picks (
+    draft_year INTEGER NOT NULL,
+    pick INTEGER NOT NULL CHECK (pick BETWEEN 1 AND 60),
+    round INTEGER NOT NULL CHECK (round IN (1, 2)),
+    team_id INTEGER NOT NULL,
+    player_id INTEGER,
+
+    player_name VARCHAR(200) NOT NULL,
+    source_player_id VARCHAR(20) NOT NULL,
+    source_url TEXT NOT NULL,
+    retrieved_at TIMESTAMPTZ NOT NULL,
+
+    PRIMARY KEY (draft_year, pick),
+
+    CONSTRAINT fk_draft_picks_team
+        FOREIGN KEY (team_id)
+        REFERENCES teams(team_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_draft_picks_player
+        FOREIGN KEY (player_id)
+        REFERENCES players(player_id)
+        ON DELETE SET NULL
+);
+"""
+
+
+# Columns added after a table was first created; safe to rerun.
+ALTER_TABLES_SQL = """
+ALTER TABLE player_contracts
+    ADD COLUMN IF NOT EXISTS later_salaries NUMERIC(14, 2)[] NOT NULL DEFAULT '{}';
 """
 
 
@@ -224,6 +260,7 @@ def setup_database():
 
         print("Creating tables...")
         cursor.execute(CREATE_TABLES_SQL)
+        cursor.execute(ALTER_TABLES_SQL)
 
         print("Creating indexes...")
         cursor.execute(CREATE_INDEXES_SQL)

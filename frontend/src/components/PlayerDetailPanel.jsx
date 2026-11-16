@@ -47,6 +47,8 @@ export default function PlayerDetailPanel({ playerId }) {
   const fairValue = valuation.predicted_value ?? player.predicted_value
   const surplus = valuation.surplus ?? (salary != null && fairValue != null ? fairValue - salary : null)
   const max = Math.max(salary ?? 0, fairValue ?? 0) || 1
+  const noRecentStats = (valuation.value_missing_reason ?? player.value_missing_reason) === 'no_recent_stats'
+  const atCeiling = valuation.at_value_ceiling ?? player.at_value_ceiling
   const tone = surplus == null ? '' : surplus >= 0 ? 'positive' : 'negative'
   // Newest season first. Its teams are historical, so label them with the season.
   const latest = player.seasons?.[0]
@@ -67,12 +69,12 @@ export default function PlayerDetailPanel({ playerId }) {
 
         <div className="stat-grid">
           <div className="stat">
-            <small>Fair value</small>
-            <strong>{formatMoney(fairValue)}</strong>
+            <small>Fair value{atCeiling && <span className="max-tag">Max value</span>}</small>
+            <strong>{formatMoney(fairValue, noRecentStats ? 'No stats' : 'Unavailable')}</strong>
           </div>
           <div className="stat">
             <small>Salary</small>
-            <strong>{formatMoney(salary)}</strong>
+            <strong>{(valuation.contract_type ?? player.contract_type) === 'two_way' ? 'Two-way' : formatMoney(salary)}</strong>
           </div>
         </div>
 
@@ -83,7 +85,7 @@ export default function PlayerDetailPanel({ playerId }) {
 
         <div className={`surplus ${tone || 'neutral'}`}>
           <span>{surplus == null ? 'Net value' : surplus >= 0 ? 'Surplus' : 'Deficit'}</span>
-          <strong>{formatSurplus(surplus)}</strong>
+          <strong>{formatSurplus(surplus, noRecentStats ? 'No stats' : 'Unavailable')}</strong>
         </div>
         {surplus != null && (
           <p className="muted">
@@ -109,7 +111,18 @@ function ContractNote({ player, valuation }) {
   if (type === 'two_way') notes.push("Two-way contract: it doesn't count against the cap, and its pay isn't listed.")
   else if (type == null) notes.push('No 2026–27 NBA contract on file.')
   else if (valuation.salary == null && player.salary == null) notes.push("2026–27 salary hasn't been listed yet.")
-  if (valuation.predicted_value == null && player.predicted_value == null) {
+  if (valuation.at_value_ceiling ?? player.at_value_ceiling) {
+    const uncapped = valuation.uncapped_value ?? player.uncapped_value
+    notes.push(
+      "Fair value is at the model's ceiling: no team can pay more than the max, so it's capped here"
+      + (uncapped != null ? `. Without the cap, the model's estimate is about ${formatMoney(uncapped)}.` : '.'),
+    )
+  }
+  if (valuation.value_basis === 'draft_slot') {
+    notes.push(`Fair value estimated from draft position (No. ${valuation.draft_pick}): no NBA stats from last season.`)
+  } else if ((valuation.value_missing_reason ?? player.value_missing_reason) === 'no_recent_stats') {
+    notes.push('Not in the 2025–26 stats (missed the season or barely played), so the model has nothing recent to value.')
+  } else if (valuation.predicted_value == null && player.predicted_value == null) {
     notes.push('No fair value: the model needs last season’s ratings and minutes.')
   }
   return notes.length ? <p className="muted fine">{notes.join(' ')}</p> : null

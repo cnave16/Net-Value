@@ -39,11 +39,11 @@ def create_app(test_config=None):
 
     from .routes.catalog import catalog
     from .routes.health import health
-    from .routes.pending import pending
+    from .routes.picks import picks
     from .routes.projections import projections
     from .routes.trades import trades
 
-    for blueprint in (catalog, health, pending, projections, trades):
+    for blueprint in (catalog, health, picks, projections, trades):
         # Each route group shares the /api URL prefix.
         app.register_blueprint(blueprint, url_prefix="/api")
 
