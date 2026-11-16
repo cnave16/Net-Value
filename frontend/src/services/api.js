@@ -94,8 +94,10 @@ export async function getValuation(playerId) {
 // ---- Trade simulator (Bronson's backend; see docs/trades.md) ----
 
 // Roster with salaries, baseline projected wins, and top addition targets.
-export function getTradeTeam(teamId, seasonId) {
-  return request({ method: 'get', url: `/trade/teams/${teamId}`, params: { season_id: seasonId } })
+export function getTradeTeam(teamId, seasonId, availableSalary = null) {
+  const params = { season_id: seasonId }
+  if (availableSalary != null && availableSalary !== '') params.available_salary = availableSalary
+  return request({ method: 'get', url: `/trade/teams/${teamId}`, params })
 }
 
 // transfers: [{ player_id, from_team_id, to_team_id }]. Every team in teamIds must take part.

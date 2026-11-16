@@ -111,7 +111,7 @@ def analyze_trade(teams, team_ids, transfers, cap_context):
     return {"analysis_available": True, "teams": results, "legality": legality}
 
 
-def commissioner_dashboard(team, candidates, cap_context, valuation):
+def commissioner_dashboard(team, candidates, cap_context, valuation, available_salary=None):
     """Rank targets with Chase's score, without claiming they fit a trade budget."""
     roster = team["players"]
     before_wins = projection(roster)
@@ -128,6 +128,7 @@ def commissioner_dashboard(team, candidates, cap_context, valuation):
     if not models:
         reason = "no_usable_roster_stats"
     targets, skipped, eligible_count = [], [], 0
+    over_budget_count = 0
     weights = None
     if reason is None:
         candidate_map, prices, after_wins = {}, {}, {}
@@ -147,6 +148,10 @@ def commissioner_dashboard(team, candidates, cap_context, valuation):
                 code = "missing_positive_actual_salary"
             if code:
                 skipped.append({"player_id": player["player_id"], "reason": code})
+                continue
+            # Compare exact cap-salary cents before Chase rounds model values.
+            if available_salary is not None and salary > available_salary:
+                over_budget_count += 1
                 continue
             external = model.external_id
             candidate_map[external] = player
@@ -191,5 +196,7 @@ def commissioner_dashboard(team, candidates, cap_context, valuation):
         "recommendation_reason": reason,
         "ranking_excluded_roster_ids": sorted(excluded),
         "ranking_weights": weights,
-        "budget_filter_applied": False,
+        "budget_filter_applied": available_salary is not None,
+        "available_salary": dollar(available_salary),
+        "over_budget_candidate_count": over_budget_count,
     }

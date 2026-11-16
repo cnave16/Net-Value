@@ -162,7 +162,10 @@ See [the trade contract](trades.md) for complete requests, responses, and rule
 coverage. The commissioner dashboard at `GET /trade/teams/<id>?season_id=<id>`
 returns player details, baseline wins/win percentage, and up to 15 targets ranked
 by Chase's weighted wins/salary-surplus/LEBRON score for independent additions.
-There is no budget filter; over-cap teams can still receive targets. Existing
+An optional `available_salary` query parameter filters by maximum annual incoming
+salary in dollars. Omit it for no limit; zero is explicit. This does not establish
+trade legality. Responses add `available_salary` (decimal string or null) and
+`over_budget_candidate_count`. Over-cap teams can still receive targets. Existing
 win fields retain the trade simulator's projection basis; `ranking_projected_wins`
 contains Chase's normalized-rotation estimates used in scoring. Added fields
 include `score`, `estimated_fair_salary`, and `salary_surplus` per target, plus

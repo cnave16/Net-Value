@@ -307,3 +307,8 @@ main { max-width: 1180px; margin: 0 auto; padding: 2rem 1rem; }
   font: 700 0.62rem var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
 }
 .player-card.selected .max-tag { color: #a9a7a2; }
+
+/* Keep the optional target filter compact inside each team column. */
+.target-budget-form { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: .75rem; }
+.target-budget-form label { flex-basis: 100%; }
+.target-budget-form input { min-width: 0; flex: 1 1 8rem; width: 8rem; padding: .5rem; border: 1px solid var(--line); background: var(--bg); color: inherit; font: inherit; }
