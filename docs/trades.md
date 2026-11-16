@@ -27,7 +27,8 @@ The response's `data` contains:
   identical before/after values because no trade has occurred.
 - `targets`: up to 15 independent additions ranked with Chase's weighted score
   (65% wins, 25% salary surplus, 10% LEBRON impact after component scaling).
-  No outgoing players, salary-budget filter, or trade-legality filter is applied.
+  No outgoing players or trade-legality filter is applied. A maximum incoming
+  salary can optionally filter candidates before selecting the top 15.
 - `eligible_target_count` and `skipped_targets` with IDs and reasons for unusable
   stats, NBA IDs, fair values, or positive actual salaries. Fewer than 15 results
   are possible. Two-way zero cap hits are not treated as annual salary.
@@ -60,8 +61,19 @@ connection. Candidate salaries come directly from `player_contracts.cap_salary`.
 Internal player IDs remain unchanged in API responses; NBA IDs are used only
 inside the model. The optimizer's standalone database/salary discovery is not used.
 
-`budget_filter_applied` is false even when payroll is unknown or the team is over
-the cap. `ranking_weights` exposes Chase's weights. `recommendation_status` is
+Omit `available_salary` to keep recommendations unfiltered, even when payroll is
+unknown or the team is over the cap. To filter, request for example
+`GET /api/trade/teams/20?season_id=1&available_salary=10000000`.
+This is a maximum annual salary for one incoming player, not total team payroll
+or a trade-legality determination. Values must be nonnegative plain dollar
+amounts (up to 12 integer digits and two decimal places); duplicate, empty,
+negative, nonfinite, and malformed values return 400. Zero is an explicit zero
+budget; omit the parameter to clear it. Salaries are compared with exact cents.
+`budget_filter_applied` indicates whether a limit was supplied, `available_salary`
+is a decimal dollar string or null, and `over_budget_candidate_count` counts
+otherwise eligible candidates removed by the limit. The UI's per-team Apply
+and Clear controls only change target recommendations, not the selected trade.
+Budgets are local to the page session and are not included in shared trade URLs. `ranking_weights` exposes Chase's weights. `recommendation_status` is
 `available` or `unavailable`, with `recommendation_reason` when unavailable.
 Insufficient league minutes (below the model's 90% coverage threshold) or missing
 NBA IDs on usable roster members returns an empty target list, never the old

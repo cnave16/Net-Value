@@ -456,3 +456,39 @@ def test_missing_roster_id_or_incomplete_league_never_falls_back(teams, caps):
     result = commissioner_dashboard(teams[10], candidates(teams), caps[10], ranking_values(teams))
     assert result['targets'] == []
     assert result['recommendation_reason'] == 'missing_roster_nba_id'
+
+
+@pytest.mark.parametrize('query', ['available_salary=-1', 'available_salary=NaN', 'available_salary=Infinity',
+    'available_salary=', 'available_salary=1.001', 'available_salary=1e6', 'available_salary=1,000',
+    'available_salary=1&available_salary=2', 'available_salary=1000000000000'])
+def test_bad_recommendation_budget_rejected_before_loading(client, loaded, query):
+    assert client.get('/api/trade/teams/10?season_id=1&' + query).status_code == 400
+    loaded.assert_not_called()
+
+
+@pytest.mark.parametrize('budget,count', [('2000000.20', 12), ('2000000.19', 0), ('0', 0)])
+def test_budget_route_filters_exact_salary_cents(client, loaded, teams, monkeypatch, budget, count):
+    monkeypatch.setattr(trades, 'load_target_candidates', lambda _: candidates(teams))
+    monkeypatch.setattr(trades, 'load_recommendation_values', lambda _: ranking_values(teams))
+    response = client.get('/api/trade/teams/10?season_id=1&available_salary=' + budget)
+    assert response.status_code == 200
+    data = response.json['data']
+    assert data['budget_filter_applied'] is True
+    assert Decimal(data['available_salary']) == Decimal(budget)
+    assert data['eligible_target_count'] == count
+    assert data['over_budget_candidate_count'] == 24-count
+    assert all(Decimal(t['player']['actual_salary']) <= Decimal(budget) for t in data['targets'])
+    assert response.json['meta']['target_budget_filter_applied'] is True
+
+
+def test_budget_filters_before_top_15_and_keeps_scores(teams, caps):
+    pool = candidates(teams)
+    values = ranking_values(teams)
+    unrestricted = commissioner_dashboard(teams[10], pool, caps[10], values)
+    limited = commissioner_dashboard(teams[10], pool, caps[10], values, Decimal('2000000.20'))
+    scores = {t['player']['player_id']: t['score'] for t in unrestricted['targets']}
+    assert len(limited['targets']) == 12
+    assert all(t['score'] == scores[t['player']['player_id']] for t in limited['targets'])
+    assert limited['payroll'] == unrestricted['payroll']
+    assert limited['salary_cap'] == unrestricted['salary_cap']
+    assert limited['projected_wins'] == unrestricted['projected_wins']

@@ -72,10 +72,47 @@ function parseTradeParams(params, knownTeamIds) {
 }
 
 function TeamColumn({
-  index, slot, teams, takenIds, tradeTeamIds, roster, moves, players, canRemove,
+  index, slot, teams, takenIds, tradeTeamIds, roster, moves, players, canRemove, seasonId,
   onTeamChange, onRemove, onToggle, onDestination, onRequestTarget, canRequest,
 }) {
   const [showAllTargets, setShowAllTargets] = useState(false)
+  const [budget, setBudget] = useState('')
+  const [filtered, setFiltered] = useState(null)
+  const targetVersion = useRef(0)
+  useEffect(() => () => { targetVersion.current += 1 }, [])
+
+  function applyBudget(event) {
+    event.preventDefault()
+    const amount = budget.trim()
+    if (amount && !/^[0-9]{1,12}(?:\.[0-9]{1,2})?$/.test(amount)) {
+      targetVersion.current += 1
+      setFiltered({ status: 'error', error: 'Enter dollars without commas, with at most two decimal places.' })
+      return
+    }
+    const version = ++targetVersion.current
+    if (!amount) {
+      setFiltered(null)
+      return
+    }
+    setFiltered({ status: 'loading' })
+    getTradeTeam(slot.teamId, seasonId, amount)
+      .then(({ data }) => {
+        if (version === targetVersion.current) {
+          setFiltered({ status: 'ready', team: data })
+          setShowAllTargets(false)
+        }
+      })
+      .catch((error) => {
+        if (version === targetVersion.current) setFiltered({ status: 'error', error: error.message })
+      })
+  }
+
+  function clearBudget() {
+    targetVersion.current += 1
+    setBudget('')
+    setFiltered(null)
+    setShowAllTargets(false)
+  }
   const teamId = slot.teamId
   const team = roster?.status === 'ready' ? roster.team : null
   const rosterPlayers = team
@@ -88,7 +125,8 @@ function TeamColumn({
     .filter(Boolean)
   const destinations = tradeTeamIds.filter((id) => id !== teamId)
   const abbreviation = (id) => teams.find((t) => t.id === id)?.abbreviation ?? `#${id}`
-  const targets = team?.targets ?? []
+  const targetTeam = filtered ? (filtered.status === 'ready' ? filtered.team : null) : team
+  const targets = targetTeam?.targets ?? []
   const shownTargets = showAllTargets ? targets : targets.slice(0, TARGETS_SHOWN)
 
   return (
@@ -168,9 +206,28 @@ function TeamColumn({
             })}
           </ul>
 
-          {targets.length > 0 && (
+          {team && (
             <div className="trade-targets">
               <small className="section-label">Top targets</small>
+              <form onSubmit={applyBudget} className="target-budget-form">
+                <label htmlFor={`budget-${slot.key}`}>Maximum incoming salary ($)</label>
+                <input id={`budget-${slot.key}`} type="text" inputMode="decimal"
+                  placeholder="No limit" value={budget} onChange={(e) => setBudget(e.target.value)} />
+                <button type="submit" className="trade-secondary">Apply</button>
+                <button type="button" className="link-button" onClick={clearBudget}>Clear</button>
+              </form>
+              <p className="fine muted">Annual salary for one player. Blank means no limit. This does not check trade legality.</p>
+              <div aria-live="polite">
+                {filtered?.status === 'loading' && <p className="muted">Updating targets…</p>}
+                {filtered?.status === 'error' && <p className="error">{filtered.error}</p>}
+                {targetTeam && <p className="fine muted">{targetTeam.budget_filter_applied
+                  ? `Applied limit: $${Number(targetTeam.available_salary).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  : 'Applied limit: none'}</p>}
+                {targetTeam?.recommendation_status === 'unavailable' && <p className="muted">Recommendations are unavailable for this roster's data.</p>}
+                {targetTeam?.recommendation_status !== 'unavailable' && targetTeam && targets.length === 0 && (
+                  <p className="muted">No eligible targets{targetTeam.budget_filter_applied ? ' within this salary limit' : ''}.</p>
+                )}
+              </div>
               <p className="fine muted">Projected win change from adding one player, before sending anyone back.</p>
               <ol>
                 {shownTargets.map((target) => {
@@ -508,7 +565,8 @@ export default function TradePage() {
       <div className="trade-builder">
         {slots.map((slot, index) => (
           <TeamColumn
-            key={slot.key}
+            key={`${slot.key}-${slot.teamId}-${season?.id}`}
+            seasonId={season?.id}
             index={index}
             slot={slot}
             teams={teams}

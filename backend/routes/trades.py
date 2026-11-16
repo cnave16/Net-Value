@@ -1,5 +1,8 @@
 """Expose the commissioner dashboard and validate multi-team simulation requests."""
 
+import re
+from decimal import Decimal
+
 from flask import Blueprint, request
 from werkzeug.exceptions import BadRequest
 
@@ -88,8 +91,15 @@ def team_dashboard(team_id):
     """Supply the selected roster, its projection, and up to 15 addition targets."""
     if not positive_id(team_id):
         raise BadRequest("team_id must be a positive database integer ID.")
-    if set(request.args) != {"season_id"} or len(request.args.getlist("season_id")) != 1:
-        raise BadRequest("Provide exactly one season_id query parameter.")
+    if ("season_id" not in request.args or set(request.args) - {"season_id", "available_salary"}
+            or any(len(request.args.getlist(key)) != 1 for key in request.args)):
+        raise BadRequest("Provide one season_id and optionally one available_salary.")
+    raw_budget = request.args.get("available_salary")
+    budget = None
+    if raw_budget is not None:
+        if not re.fullmatch(r"[0-9]{1,12}(?:\.[0-9]{1,2})?", raw_budget):
+            raise BadRequest("available_salary must be nonnegative dollars with at most two decimal places.")
+        budget = Decimal(raw_budget)
     season_id = integer_argument("season_id", maximum=2147483647)
     teams = load_trade_rosters([team_id], season_id)
     candidates = load_target_candidates(season_id)
@@ -97,12 +107,12 @@ def team_dashboard(team_id):
     meta = simulation_meta(season_id)
     meta["target_basis"] = "single_player_addition_without_outgoing_players_or_legality_filter"
     meta["target_ranking"] = "chase_weighted_wins_salary_surplus_lebron"
-    meta["target_budget_filter_applied"] = False
+    meta["target_budget_filter_applied"] = budget is not None
     meta["ranking_minutes_basis"] = "top_15_rotation_capped_at_3200_rescaled_to_19680"
     meta["warnings"].append(
-        "Targets use Chase's score without a budget or legality filter. Each is an independent "
+        "Targets use Chase's score with an optional maximum incoming salary, not a legality filter. Each is an independent "
         "addition with no outgoing players. Ranking uses normalized rotation minutes; displayed "
         "projected_wins retain the trade simulator's fixed historical minutes."
     )
     values = load_recommendation_values(season_id)
-    return success(commissioner_dashboard(teams[team_id], candidates, context.get(team_id, {}), values), meta)
+    return success(commissioner_dashboard(teams[team_id], candidates, context.get(team_id, {}), values, budget), meta)

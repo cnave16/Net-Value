@@ -64,7 +64,7 @@ Run `npm run lint` and `npm run build` from `frontend/` to check frontend change
 - Roster win projections using an explicit season and 12–15 distinct players.
 - Multi-team trade simulations for 2026–27 with before/after wins, win percentages, payroll, and cap-space estimates.
 - A commissioner dashboard with roster details and the top 15 independent addition targets,
-  ranked by Chase's wins/salary-value/LEBRON score without a salary-budget filter.
+  ranked by Chase's wins/salary-value/LEBRON score with an optional maximum incoming salary (no limit by default).
 - Roster checks, salary matching, and first/second-apron checks with explicit coverage gaps.
 - Consistent JSON responses, input validation, and database error handling.
 
