@@ -23,15 +23,26 @@ from psycopg2 import sql
 import psycopg2
 from dotenv import load_dotenv
 
-from project_wins import project_wins
-from salary_value import (
-    NBA_GAMES,
-    NBA_TEAMS,
-    MIN_LEAGUE_MINUTES_COVERAGE,
-    MINUTES_PER_TEAM_GAME,
-    _compute_salary_allocations,
-    _fetch_season_players,
-)
+if __package__:
+    from .project_wins import project_wins
+    from .salary_value import (
+        NBA_GAMES,
+        NBA_TEAMS,
+        MIN_LEAGUE_MINUTES_COVERAGE,
+        MINUTES_PER_TEAM_GAME,
+        _compute_salary_allocations,
+        _fetch_season_players,
+    )
+else:
+    from project_wins import project_wins
+    from salary_value import (
+        NBA_GAMES,
+        NBA_TEAMS,
+        MIN_LEAGUE_MINUTES_COVERAGE,
+        MINUTES_PER_TEAM_GAME,
+        _compute_salary_allocations,
+        _fetch_season_players,
+    )
 
 load_dotenv()
 
@@ -658,9 +669,9 @@ def _rank_single_players_from_data(
     players, fair_salaries, current_roster, available_salary, actual_salaries,
     *, candidate_ids=None, top_n=5, weights=None, rotation_size=15,
 ):
-    """Pure calculation. Every candidate is considered ALONE, not with peers."""
-    budget = float(available_salary)
-    if not math.isfinite(budget) or budget < 0:
+    """Score independent additions; None disables only the budget filter."""
+    budget = None if available_salary is None else float(available_salary)
+    if budget is not None and (not math.isfinite(budget) or budget < 0):
         raise ValueError("available_salary must be nonnegative and finite")
     if not isinstance(top_n, int) or top_n < 1:
         raise ValueError("top_n must be a positive integer")
@@ -692,7 +703,7 @@ def _rank_single_players_from_data(
     for pid in sorted(eligible_ids & set(normalized_prices)):
         player = by_id[pid]
         salary = normalized_prices[pid]
-        if salary > budget:
+        if budget is not None and salary > budget:
             unaffordable.append({
                 "player_id": pid, "player_name": player.name,
                 "actual_salary": salary, "salary_over_budget": round(salary - budget),
@@ -718,9 +729,9 @@ def _rank_single_players_from_data(
             "baseline_projected_wins": round(baseline, 3),
             "new_projected_wins": round(solo_wins, 3),
             "wins_added": round(wins_added, 3),
-            "remaining_salary_if_selected": round(budget - salary),
+            "remaining_salary_if_selected": None if budget is None else round(budget - salary),
             "score": round(objective, 6),
-            "fits_budget": True,
+            "fits_budget": None if budget is None else True,
         })
     recommendations.sort(
         key=lambda p: (-p["score"], -p["wins_added"], p["actual_salary"], p["player_id"])
@@ -728,8 +739,10 @@ def _rank_single_players_from_data(
     return {
         "recommendations": recommendations[:top_n],
         "baseline_projected_wins": round(baseline, 3),
-        "available_salary": round(budget),
-        "affordable_candidate_count": len(recommendations),
+        "available_salary": None if budget is None else round(budget),
+        "budget_filter_applied": budget is not None,
+        "eligible_candidate_count": len(recommendations),
+        "affordable_candidate_count": None if budget is None else len(recommendations),
         "over_budget_candidate_count": len(unaffordable),
         "over_budget_examples": unaffordable[:10],
         "missing_salary_ids": missing_salary_ids,

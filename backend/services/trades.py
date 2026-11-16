@@ -5,6 +5,9 @@ import math
 from werkzeug.exceptions import UnprocessableEntity
 
 from data_model.project_wins import project_wins
+from data_model.roster_optimizer import _rank_single_players_from_data
+
+from .recommendations import model_player
 
 from .trade_finances import cap_comparison, dollar, money, payroll
 from .trade_legality import check_trade
@@ -108,36 +111,85 @@ def analyze_trade(teams, team_ids, transfers, cap_context):
     return {"analysis_available": True, "teams": results, "legality": legality}
 
 
-def commissioner_dashboard(team, candidates, cap_context):
-    """Rank single-player additions against the selected team's unchanged roster."""
+def commissioner_dashboard(team, candidates, cap_context, valuation):
+    """Rank targets with Chase's score, without claiming they fit a trade budget."""
     roster = team["players"]
     before_wins = projection(roster)
     roster_ids = {p["player_id"] for p in roster}
-    targets, skipped = [], []
-    for player in candidates:
-        if player["player_id"] in roster_ids:
-            continue
-        team_ids = player["team_ids"]
-        if team["id"] in team_ids:
-            continue
-        try:
-            after_wins = projection(roster + [player])
-        except UnprocessableEntity:
-            skipped.append({"player_id": player["player_id"], "reason": "unusable_projection_data"})
-            continue
-        targets.append({
-            "player": player_details(player),
-            "team_id": team_ids[0] if len(team_ids) == 1 else None,
-            "team_ids": team_ids,
-            **win_comparison(before_wins, after_wins),
-        })
-    targets.sort(key=lambda item: (-item["projected_wins"]["net_difference"], item["player"]["player_id"]))
+    roster_models = [model_player(p) for p in roster]
+    excluded = [p["player_id"] for p, model in zip(roster, roster_models) if model is None]
+    models = [p for p in roster_models if p is not None]
+    reason = valuation["reason"]
+    # Missing ratings stay excluded as in the trade simulator. Missing NBA IDs
+    # on otherwise usable roster members would silently change Chase's baseline.
+    if any(p.get("has_stats") is not False and p.get("minutes")
+           and not p.get("external_id") for p in roster):
+        reason = "missing_roster_nba_id"
+    if not models:
+        reason = "no_usable_roster_stats"
+    targets, skipped, eligible_count = [], [], 0
+    weights = None
+    if reason is None:
+        candidate_map, prices, after_wins = {}, {}, {}
+        for player in candidates:
+            if player["player_id"] in roster_ids or team["id"] in player["team_ids"]:
+                continue
+            model = model_player(player)
+            salary = money(player.get("actual_salary"))
+            code = None
+            if not player.get("external_id"):
+                code = "missing_nba_id"
+            elif model is None:
+                code = "unusable_projection_data"
+            elif model.external_id not in valuation["fair"]:
+                code = "missing_fair_value"
+            elif salary is None or salary <= 0:
+                code = "missing_positive_actual_salary"
+            if code:
+                skipped.append({"player_id": player["player_id"], "reason": code})
+                continue
+            external = model.external_id
+            candidate_map[external] = player
+            prices[external] = salary
+            models.append(model)
+            after_wins[external] = projection(roster + [player])
+        ranked = _rank_single_players_from_data(
+            models, valuation["fair"],
+            [p.external_id for p in roster_models if p is not None],
+            None, prices, candidate_ids=list(candidate_map), top_n=15,
+        )
+        weights = ranked["weights"]
+        eligible_count = ranked["eligible_candidate_count"]
+        for item in ranked["recommendations"]:
+            external = item["player_id"]
+            player = candidate_map[external]
+            team_ids = player["team_ids"]
+            targets.append({
+                "player": player_details(player),
+                "team_id": team_ids[0] if len(team_ids) == 1 else None,
+                "team_ids": team_ids,
+                # Existing displayed wins keep the trade simulator's minutes basis.
+                **win_comparison(before_wins, after_wins[external]),
+                "score": item["score"],
+                "estimated_fair_salary": item["estimated_fair_salary"],
+                "salary_surplus": item["salary_surplus"],
+                "ranking_projected_wins": {
+                    "before": item["baseline_projected_wins"],
+                    "after": item["new_projected_wins"],
+                    "net_difference": item["wins_added"],
+                },
+            })
     salaries = payroll(roster, roster)
     return {
         "team_id": team["id"], "abbreviation": team["abbreviation"], "name": team["name"],
         "roster": [player_details(p) for p in sorted(roster, key=lambda p: p["player_id"])],
         "projected_wins": before_wins, "projected_win_percentage": before_wins / 82 * 100,
         "payroll": salaries, "salary_cap": cap_comparison(salaries, cap_context),
-        "targets": targets[:15], "eligible_target_count": len(targets),
-        "skipped_targets": skipped,
+        "targets": targets, "eligible_target_count": eligible_count,
+        "skipped_targets": sorted(skipped, key=lambda p: p["player_id"]),
+        "recommendation_status": "unavailable" if reason else "available",
+        "recommendation_reason": reason,
+        "ranking_excluded_roster_ids": sorted(excluded),
+        "ranking_weights": weights,
+        "budget_filter_applied": False,
     }

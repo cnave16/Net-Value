@@ -8,6 +8,7 @@ from ..responses import success
 from ..services.trade_data import load_cap_context, load_target_candidates, load_trade_rosters
 from ..services.trade_finances import TRADE_SEASON_START_YEAR
 from ..services.trades import analyze_trade, commissioner_dashboard
+from ..services.recommendations import load_recommendation_values
 
 trades = Blueprint("trades", __name__)
 
@@ -95,4 +96,13 @@ def team_dashboard(team_id):
     context = load_cap_context([team_id], teams)
     meta = simulation_meta(season_id)
     meta["target_basis"] = "single_player_addition_without_outgoing_players_or_legality_filter"
-    return success(commissioner_dashboard(teams[team_id], candidates, context.get(team_id, {})), meta)
+    meta["target_ranking"] = "chase_weighted_wins_salary_surplus_lebron"
+    meta["target_budget_filter_applied"] = False
+    meta["ranking_minutes_basis"] = "top_15_rotation_capped_at_3200_rescaled_to_19680"
+    meta["warnings"].append(
+        "Targets use Chase's score without a budget or legality filter. Each is an independent "
+        "addition with no outgoing players. Ranking uses normalized rotation minutes; displayed "
+        "projected_wins retain the trade simulator's fixed historical minutes."
+    )
+    values = load_recommendation_values(season_id)
+    return success(commissioner_dashboard(teams[team_id], candidates, context.get(team_id, {}), values), meta)
