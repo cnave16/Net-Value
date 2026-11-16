@@ -6,6 +6,7 @@ from werkzeug.exceptions import BadRequest, NotFound
 from ..database import query
 from ..responses import success
 from ..services.trade_finances import TRADE_SEASON_START_YEAR
+from ..services.draft import rookie_estimates
 from ..services.valuation import fair_values, valuation
 
 catalog = Blueprint("catalog", __name__)
@@ -96,7 +97,8 @@ def players():
     )
     # An empty page has a count-only row; don't return it as a player.
     _, values = fair_values()
-    data = [player_response(row, values) for row in rows if row["id"] is not None]
+    rookies = rookie_estimates()
+    data = [player_response(row, values, rookies) for row in rows if row["id"] is not None]
     total = rows[0]["total"]
     return success(data, {
         "page": page, "limit": limit, "total": total,
@@ -113,13 +115,14 @@ CONTRACT_JOIN = (
 )
 
 
-def player_response(row, values):
+def player_response(row, values, rookies):
     # Use the same player fields for search results and individual lookups.
     # team is the current (2026-27) contract team; null for players without one.
     return {
         "id": row["id"], "name": row["name"], "external_id": row["external_id"],
         "team": row.get("team"),
-        **valuation(row["external_id"], row.get("cap_salary"), row.get("contract_type"), values),
+        **valuation(row["external_id"], row.get("cap_salary"), row.get("contract_type"),
+                    values, rookies.get(row["id"])),
     }
 
 
@@ -142,7 +145,8 @@ def find_player(player_id):
 def player(player_id):
     row = find_player(player_id)
     _, values = fair_values()
-    return success({**player_response(row, values), "seasons": player_seasons(player_id)})
+    response = player_response(row, values, rookie_estimates())
+    return success({**response, "seasons": player_seasons(player_id)})
 
 
 @catalog.post("/valuation")
@@ -153,9 +157,10 @@ def player_valuation():
         raise BadRequest("Provide only player_id as a database integer ID.")
     row = find_player(body["player_id"])
     year, values = fair_values()
+    rookie = rookie_estimates().get(row["id"])
     return success(
         {"player_id": row["id"], **valuation(row["external_id"], row.get("cap_salary"),
-                                              row.get("contract_type"), values)},
+                                              row.get("contract_type"), values, rookie)},
         {
             "fair_value_basis": "league_cap_budget_by_lebron_above_replacement_times_minutes",
             "stats_season_end_year": year,

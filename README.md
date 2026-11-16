@@ -68,12 +68,14 @@ Run `npm run lint` and `npm run build` from `frontend/` to check frontend change
 - Consistent JSON responses, input validation, and database error handling.
 
 - Player valuation: Chase's fair-salary model against each player's 2026–27 cap salary.
+- Draft pick value by slot (`/api/picks` and the Draft Picks page), and rookie
+  fair values from draft position, built on the same model.
 
 Rosters and salaries come from 2026–27 contracts loaded by
 `database_config/load_contracts.py` (see [trade analysis](docs/trades.md)).
-Rerun it to refresh them. The draft pick endpoint is a placeholder that returns
-HTTP 501. Cap holds, exceptions, and contract/date restrictions still need
-integration.
+Rerun it to refresh them; `database_config/load_draft.py` loads draft results the
+same way. Future-pick projections, pick ownership, cap holds, exceptions, and
+contract/date restrictions still need integration.
 
 See [trade analysis](docs/trades.md) for the multi-team request, dashboard
 response, provisional cap estimates, and the legality checker's supported rules.
@@ -125,12 +127,13 @@ backend/
   routes/
     health.py          App and database health checks
     catalog.py         Players, teams, seasons, and player valuation
-    pending.py         Reserved draft pick route
+    picks.py           Draft pick value by slot
     projections.py     Roster win estimates using Chase's calculation
     trades.py          Multi-team trades and commissioner dashboard API
   services/
     trade_data.py      Current contract rosters, candidates, and dead money
     valuation.py       Fair value (Chase's model) next to current cap salary
+    draft.py           Draft value model fit and rookie estimates (cached)
     trades.py          Multi-team transfers, win comparisons, and target ranking
     trade_finances.py  Exact payroll arithmetic and verified season cap settings
     trade_legality.py  Roster, salary-matching, and apron checks
@@ -139,9 +142,13 @@ frontend/
   vite.config.js      Development proxy to Flask on port 5001
 data_model/
   project_wins.py      Chase's roster win calculation and standalone demo
+  salary_value.py      Chase's fair annual salary model
+  draft_value.py       Draft slot value built on the fair salary model
 database_config/
   databasesetup.py     Test database table and index setup
   enterdata.py         CSV importer targeting PROD_DATABASE_URL
+  load_contracts.py    2026-27 rosters and cap salaries (Basketball-Reference)
+  load_draft.py        Draft results by year (Basketball-Reference)
   testdatabaseconnection.py  Standalone test and production connection checks
 player_data/
   2025-2026.csv        Player/team records used by the importer

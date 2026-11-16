@@ -248,3 +248,46 @@ main { max-width: 1180px; margin: 0 auto; padding: 2rem 1rem; }
   display: block; font-size: 0.75rem; color: var(--muted); cursor: help;
   text-decoration: underline dotted; text-underline-offset: 2px;
 }
+
+/* ---- Draft pick value ---- */
+/* Chart series colors, validated (dataviz validator) on each mode's surface. */
+:root { --viz-value: #ff5a1f; --viz-salary: #2a78d6; }
+@media (prefers-color-scheme: dark) { :root { --viz-value: #d95926; --viz-salary: #3987e5; } }
+
+.draft-page > .muted { margin-top: -0.75rem; margin-bottom: 1.5rem; max-width: 760px; }
+.draft-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); border: 2px solid var(--ink); background: var(--surface); margin-bottom: 1.5rem; }
+@media (prefers-color-scheme: dark) { .draft-tiles, .draft-chart, .draft-table-wrap { border-color: var(--line) !important; } }
+.draft-tiles .stat + .stat { border-left: 1px solid var(--line); }
+.draft-tiles .stat span { display: block; }
+
+.draft-chart { background: var(--surface); border: 2px solid var(--ink); padding: 1rem; margin-bottom: 1.5rem; }
+.draft-legend { display: flex; flex-wrap: wrap; gap: 1.25rem; margin-bottom: 0.5rem; font-size: 0.85rem; color: var(--muted); }
+.draft-legend span { display: inline-flex; align-items: center; gap: 0.4rem; }
+.key-bar, .key-tick { display: inline-block; width: 14px; flex: none; }
+.key-bar { height: 10px; border-radius: 2px 2px 0 0; background: var(--viz-value); }
+.key-tick { height: 2px; background: var(--viz-salary); }
+.draft-chart-frame { position: relative; }
+.draft-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.draft-grid { stroke: var(--line); stroke-width: 1; }
+.draft-divider { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.draft-axis { fill: var(--muted); font: 600 11px 'Barlow', sans-serif; font-variant-numeric: tabular-nums; }
+.draft-bar { fill: var(--viz-value); }
+.draft-tick { stroke: var(--viz-salary); stroke-width: 2.5; }
+.draft-tick.estimate { stroke-dasharray: 3 2; }
+.draft-hit { fill: transparent; cursor: default; outline: none; }
+.draft-slot.active .draft-bar { opacity: 0.8; }
+.draft-slot.active .draft-hit { fill: var(--text); fill-opacity: 0.05; }
+.draft-tooltip {
+  position: absolute; top: 0; transform: translateX(-50%); pointer-events: none; z-index: 1;
+  min-width: 190px; padding: 0.55rem 0.7rem; background: var(--surface); color: var(--text);
+  border: 1px solid var(--line); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18); font-size: 0.85rem;
+}
+.draft-tooltip div { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.2rem; }
+.draft-tooltip strong { font-variant-numeric: tabular-nums; }
+
+.draft-table-wrap { background: var(--surface); border: 2px solid var(--ink); padding: 1rem; margin-bottom: 1.5rem; overflow-x: auto; }
+.draft-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; margin-bottom: 0.75rem; }
+.draft-table th { text-align: left; font: 600 0.75rem var(--display); text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--line); }
+.draft-table td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.draft-table td.positive { color: var(--positive); }
+.draft-table td.negative { color: var(--negative); }

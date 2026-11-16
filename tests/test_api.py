@@ -26,6 +26,7 @@ def no_fair_values(monkeypatch):
     # The league valuation needs a database; most tests only check routing.
     values = MagicMock(return_value=(None, {}))
     monkeypatch.setattr(catalog, "fair_values", values)
+    monkeypatch.setattr(catalog, "rookie_estimates", MagicMock(return_value={}))
     return values
 
 
@@ -112,10 +113,20 @@ def test_connection_is_reused_and_closed(app, monkeypatch):
     connection.close.assert_called_once()
 
 
-def test_pending_features_do_not_claim_analysis(client):
-    response = client.get("/api/picks")
-    assert response.status_code == 501
-    assert response.json["error"]["code"] == "NOT_IMPLEMENTED"
+def test_rookie_without_stats_valued_by_draft_slot(client, monkeypatch, no_fair_values):
+    monkeypatch.setattr(catalog, "query", MagicMock(return_value=[contract_row(external_id=None)]))
+    monkeypatch.setattr(catalog, "rookie_estimates", MagicMock(return_value={7: {"pick": 3, "value": 15700000.4}}))
+    data = client.post("/api/valuation", json={"player_id": 7}).json["data"]
+    assert data["predicted_value"] == 15700000.0 and data["surplus"] == -4300000.0
+    assert data["value_basis"] == "draft_slot" and data["draft_pick"] == 3
+
+
+def test_stats_take_priority_over_draft_slot(client, monkeypatch, no_fair_values):
+    no_fair_values.return_value = (2026, {"123": 30000000})
+    monkeypatch.setattr(catalog, "query", MagicMock(return_value=[contract_row()]))
+    monkeypatch.setattr(catalog, "rookie_estimates", MagicMock(return_value={7: {"pick": 3, "value": 1}}))
+    data = client.post("/api/valuation", json={"player_id": 7}).json["data"]
+    assert data["predicted_value"] == 30000000.0 and data["value_basis"] == "stats"
 
 
 def contract_row(**overrides):
@@ -132,6 +143,7 @@ def test_valuation_compares_fair_value_and_cap_salary(client, monkeypatch, no_fa
     assert response.json["data"] == {
         "player_id": 7, "salary": 20000000.0, "predicted_value": 25000000.0,
         "surplus": 5000000.0, "contract_type": "standard",
+        "value_basis": "stats", "draft_pick": None,
     }
     assert response.json["meta"]["stats_season_end_year"] == 2026
     assert query.call_args.args[1] == (2026, 7)

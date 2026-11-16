@@ -183,6 +183,33 @@ CREATE TABLE IF NOT EXISTS team_cap_sheets (
         REFERENCES teams(team_id)
         ON DELETE CASCADE
 );
+
+-- NBA draft results, loaded by database_config/load_draft.py. player_id is
+-- null for draftees who never reached our players table.
+CREATE TABLE IF NOT EXISTS draft_picks (
+    draft_year INTEGER NOT NULL,
+    pick INTEGER NOT NULL CHECK (pick BETWEEN 1 AND 60),
+    round INTEGER NOT NULL CHECK (round IN (1, 2)),
+    team_id INTEGER NOT NULL,
+    player_id INTEGER,
+
+    player_name VARCHAR(200) NOT NULL,
+    source_player_id VARCHAR(20) NOT NULL,
+    source_url TEXT NOT NULL,
+    retrieved_at TIMESTAMPTZ NOT NULL,
+
+    PRIMARY KEY (draft_year, pick),
+
+    CONSTRAINT fk_draft_picks_team
+        FOREIGN KEY (team_id)
+        REFERENCES teams(team_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_draft_picks_player
+        FOREIGN KEY (player_id)
+        REFERENCES players(player_id)
+        ON DELETE SET NULL
+);
 """
 
 

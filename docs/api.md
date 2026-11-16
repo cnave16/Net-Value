@@ -201,8 +201,10 @@ roster changes.
 - `predicted_value` is Chase's fair annual salary (`data_model/salary_value.py`):
   the league's cap budget split by LEBRON above replacement times minutes in the
   latest complete stats season, with a minimum salary floor and a 35%-of-cap
-  ceiling. It is null for players without an NBA ID or playable minutes, such as
-  rookies. The league valuation is cached in the API process for 10 minutes.
+  ceiling (`value_basis: "stats"`). A current rookie without stats gets the
+  expected first-season value of their draft slot instead (`value_basis:
+  "draft_slot"`, `draft_pick`; see [Draft picks](#draft-picks)). Otherwise it is
+  null. Valuations are cached in the API process for 10 minutes.
 - `salary` is the 2026–27 cap salary. It is null for two-way contracts (their
   pay is not listed), for standard contracts the source has not priced yet,
   and for players without a contract (`contract_type: null`).
@@ -210,12 +212,25 @@ roster changes.
 
 A nonexistent player returns 404; a malformed body returns 400.
 
-## Reserved endpoints
+## Draft picks
 
-`GET /picks` always returns 501 with `NOT_IMPLEMENTED`. It does not yet validate
-input, query assets, or perform analysis. The proposal's request format remains
-the design target: `slot`, `round`, optional `year`. Draft pick ownership and
-protections still need a data source.
+`GET /picks` returns all 60 slots; `slot` (1–60) or `round` (1–2) filter them.
+`year` returns 400: values are per slot, and projecting a specific future draft
+(team records, lottery odds) is not supported yet. Each slot has:
+
+- `expected_value_by_season` and `expected_value_per_season`: Chase's fair values
+  for past picks at that slot in career years 1–4 (round 1) or 1–2 (round 2),
+  smoothed across nearby slots and made non-increasing by slot.
+- `rookie_salary`: first-season cap salary of this year's pick at the slot;
+  `salary_is_estimate` is true when that pick is unsigned and the salary is
+  interpolated from neighbors.
+- `surplus_per_season` (value minus salary), `contract_seasons`, `round`, and
+  `current_draftee` (`player_id`, `name`).
+
+`meta` gives the stats season, the draft classes used, the sample size, and the
+placeholder `assumptions` (`data_model/draft_value.py`). Missing draft or stats
+data returns 422. Pick ownership and protections, needed to trade picks, still
+need a data source.
 
 ## Configuration and checks
 
