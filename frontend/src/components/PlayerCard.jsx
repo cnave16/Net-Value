@@ -14,7 +14,12 @@ export default function PlayerCard({ player, selected, onSelect }) {
       onClick={() => onSelect(player)}
       aria-pressed={selected}
     >
-      <span className="player-team">{team ?? '—'}</span>
+      <span className="player-team">
+        {team ?? '—'}
+        {player.at_value_ceiling && (
+          <span className="max-tag" title="Fair value is capped at the model's ceiling (the max salary)">Max value</span>
+        )}
+      </span>
       <span className="player-name">{name}</span>
       <span className="player-stats">
         <span>

@@ -222,6 +222,10 @@ roster changes.
   pay is not listed), for standard contracts the source has not priced yet,
   and for players without a contract (`contract_type: null`).
 - `surplus` is `predicted_value - salary`, null when either is missing.
+- `at_value_ceiling` is true when `predicted_value` is the model's $57.7M
+  ceiling (35% of the cap, about the max salary); `uncapped_value` is then the
+  same model's estimate without the ceiling (otherwise null). `surplus` always
+  uses the capped value, since no team can pay more than the max.
 - `value_missing_reason` explains a null `predicted_value`: `no_recent_stats`
   (the player isn't in the model's stats season: missed it or barely played)
   or `model_unavailable` (no complete stats season loaded); otherwise null.

@@ -48,6 +48,7 @@ export default function PlayerDetailPanel({ playerId }) {
   const surplus = valuation.surplus ?? (salary != null && fairValue != null ? fairValue - salary : null)
   const max = Math.max(salary ?? 0, fairValue ?? 0) || 1
   const noRecentStats = (valuation.value_missing_reason ?? player.value_missing_reason) === 'no_recent_stats'
+  const atCeiling = valuation.at_value_ceiling ?? player.at_value_ceiling
   const tone = surplus == null ? '' : surplus >= 0 ? 'positive' : 'negative'
   // Newest season first. Its teams are historical, so label them with the season.
   const latest = player.seasons?.[0]
@@ -68,7 +69,7 @@ export default function PlayerDetailPanel({ playerId }) {
 
         <div className="stat-grid">
           <div className="stat">
-            <small>Fair value</small>
+            <small>Fair value{atCeiling && <span className="max-tag">Max value</span>}</small>
             <strong>{formatMoney(fairValue, noRecentStats ? 'No stats' : 'Unavailable')}</strong>
           </div>
           <div className="stat">
@@ -110,6 +111,13 @@ function ContractNote({ player, valuation }) {
   if (type === 'two_way') notes.push("Two-way contract: it doesn't count against the cap, and its pay isn't listed.")
   else if (type == null) notes.push('No 2026–27 NBA contract on file.')
   else if (valuation.salary == null && player.salary == null) notes.push("2026–27 salary hasn't been listed yet.")
+  if (valuation.at_value_ceiling ?? player.at_value_ceiling) {
+    const uncapped = valuation.uncapped_value ?? player.uncapped_value
+    notes.push(
+      "Fair value is at the model's ceiling: no team can pay more than the max, so it's capped here"
+      + (uncapped != null ? `. Without the cap, the model's estimate is about ${formatMoney(uncapped)}.` : '.'),
+    )
+  }
   if (valuation.value_basis === 'draft_slot') {
     notes.push(`Fair value estimated from draft position (No. ${valuation.draft_pick}): no NBA stats from last season.`)
   } else if ((valuation.value_missing_reason ?? player.value_missing_reason) === 'no_recent_stats') {

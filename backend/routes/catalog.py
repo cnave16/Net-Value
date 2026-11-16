@@ -7,7 +7,7 @@ from ..database import query
 from ..responses import success
 from ..services.trade_finances import TRADE_SEASON_START_YEAR
 from ..services.draft import rookie_estimates
-from ..services.valuation import fair_values, valuation
+from ..services.valuation import fair_values, uncapped_values, valuation
 
 catalog = Blueprint("catalog", __name__)
 
@@ -191,7 +191,7 @@ def player_response(row, values, rookies):
         "id": row["id"], "name": row["name"], "external_id": row["external_id"],
         "team": row.get("team"),
         **valuation(row["external_id"], row.get("cap_salary"), row.get("contract_type"),
-                    values, rookies.get(row["id"])),
+                    values, rookies.get(row["id"]), uncapped_values()),
     }
 
 
@@ -229,7 +229,7 @@ def player_valuation():
     rookie = rookie_estimates().get(row["id"])
     return success(
         {"player_id": row["id"], **valuation(row["external_id"], row.get("cap_salary"),
-                                              row.get("contract_type"), values, rookie)},
+                                              row.get("contract_type"), values, rookie, uncapped_values())},
         {
             "fair_value_basis": "league_cap_budget_by_lebron_above_replacement_times_minutes",
             "stats_season_end_year": year,

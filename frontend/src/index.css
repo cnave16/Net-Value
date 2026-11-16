@@ -299,3 +299,11 @@ main { max-width: 1180px; margin: 0 auto; padding: 2rem 1rem; }
 .load-more { display: block; width: 100%; margin-top: 1rem; }
 .load-more:disabled { opacity: 0.6; cursor: wait; }
 .list-note { margin: -0.4rem 0 0.9rem; }
+
+/* "Max value": fair value capped at the model's ceiling. Text tokens, not a series color. */
+.max-tag {
+  display: inline-block; margin-left: 0.5rem; padding: 0.05rem 0.35rem; vertical-align: 1px;
+  border: 1px solid currentColor; border-radius: 3px;
+  font: 700 0.62rem var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+}
+.player-card.selected .max-tag { color: #a9a7a2; }

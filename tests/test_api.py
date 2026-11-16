@@ -27,6 +27,7 @@ def no_fair_values(monkeypatch):
     values = MagicMock(return_value=(None, {}))
     monkeypatch.setattr(catalog, "fair_values", values)
     monkeypatch.setattr(catalog, "rookie_estimates", MagicMock(return_value={}))
+    monkeypatch.setattr(catalog, "uncapped_values", MagicMock(return_value={}))
     return values
 
 
@@ -154,6 +155,7 @@ def test_valuation_compares_fair_value_and_cap_salary(client, monkeypatch, no_fa
         "player_id": 7, "salary": 20000000.0, "predicted_value": 25000000.0,
         "surplus": 5000000.0, "contract_type": "standard",
         "value_basis": "stats", "draft_pick": None, "value_missing_reason": None,
+        "at_value_ceiling": False, "uncapped_value": None,
     }
     assert response.json["meta"]["stats_season_end_year"] == 2026
     assert query.call_args.args[1] == (2026, 7)
@@ -324,3 +326,14 @@ def test_value_sorts_rank_short_seasons_after_full_ones(client, monkeypatch, no_
     # Salary sort is unaffected by games played.
     salary = client.get("/api/players?sort=salary").json["data"]
     assert [p["name"] for p in salary] == ["Injured Star", "Overpaid Vet"]
+
+
+def test_value_ceiling_flagged_with_uncapped_estimate(client, monkeypatch, no_fair_values):
+    from backend.services.valuation import VALUE_CEILING
+    no_fair_values.return_value = (2026, {"123": VALUE_CEILING})
+    monkeypatch.setattr(catalog, "uncapped_values", MagicMock(return_value={"123": 75_300_000.4}))
+    monkeypatch.setattr(catalog, "query", MagicMock(return_value=[contract_row()]))
+    data = client.post("/api/valuation", json={"player_id": 7}).json["data"]
+    assert data["at_value_ceiling"] is True and data["uncapped_value"] == 75_300_000.0
+    # Net value still uses the capped fair value.
+    assert data["surplus"] == round(VALUE_CEILING) - 20_000_000
