@@ -38,8 +38,9 @@ def pick_values():
         "notes": [
             "Expected value is the average fair value of past picks at this slot in their "
             "first seasons, smoothed across nearby slots.",
-            "Rookie salary is the first-season cap salary of this year's pick at the slot; "
-            "unsigned slots are interpolated (salary_is_estimate).",
-            "Assumptions are placeholders pending review of the fair-value model.",
+            "Salary is what this year's pick at the slot is paid over the same seasons; "
+            "unsigned slots and shorter deals are interpolated (salary_is_estimate).",
+            "Late-pick treatment (replacement level) is confirmed; the other assumptions "
+            "are placeholders under review (see assumptions.under_review).",
         ],
     })

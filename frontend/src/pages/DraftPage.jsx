@@ -174,7 +174,10 @@ export default function DraftPage() {
                 median outcome: what most players drafted at that slot turn into.
               </li>
               <li>Drafted players who never played count as the {formatMoney(assumptions.washout_value)} minimum.</li>
-              <li>These are placeholder assumptions pending review of the fair-value model.</li>
+              <li>
+                Late picks sitting near the minimum follows the fair-value model&apos;s replacement level (confirmed). The
+                washout value, one-season sample, and contract lengths are placeholders under review.
+              </li>
             </ul>
           </details>
         </>

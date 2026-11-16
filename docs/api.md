@@ -231,7 +231,8 @@ A nonexistent player returns 404; a malformed body returns 400.
   season), `contract_seasons`, `round`, and `current_draftee` (`player_id`, `name`).
 
 `meta` gives the stats season, the draft classes used, the sample size, and the
-placeholder `assumptions` (`data_model/draft_value.py`). Missing draft or stats
+`assumptions` (`data_model/draft_value.py`), with `confirmed` and `under_review`
+lists naming which settings are settled. Missing draft or stats
 data returns 422. Pick ownership and protections, needed to trade picks, still
 need a data source.
 

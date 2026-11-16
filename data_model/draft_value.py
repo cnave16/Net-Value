@@ -11,7 +11,11 @@ compared with the rookie salary paid at that slot over the same seasons. The
 median ("typical outcome") is reported alongside, since a few stars pull the
 mean up.
 
-The settings below are placeholders until Chase confirms them.
+Review status (November 2026):
+- Late picks: Chase confirmed keeping salary_value.py's replacement level, so
+  most picks after No. 14 sit near the minimum salary.
+- Washout value, the one-season sample, and contract seasons are draft
+  valuation choices; they are placeholders under review with Vincent.
 """
 
 import math
@@ -22,10 +26,10 @@ except ImportError:  # Run from inside data_model/, like Chase's other scripts
     from salary_value import BASE_SALARY_2026_27
 
 # Drafted players with no minutes in the stats season (washouts, injuries)
-# count as the minimum salary rather than $0. (Open question 1.)
+# count as the minimum salary rather than $0. (Under review with Vincent.)
 WASHOUT_VALUE = BASE_SALARY_2026_27
 # Seasons of value a pick buys: rookie scale for round 1, typical 2nd-round deal.
-# (Open question 4.)
+# (Under review with Vincent.)
 CONTRACT_SEASONS = {1: 4, 2: 2}
 FIRST_ROUND_PICKS = 30
 PICKS = 60
@@ -39,6 +43,9 @@ ASSUMPTIONS = {
     "contract_seasons": CONTRACT_SEASONS,
     "replacement_level": "unchanged from salary_value.py",
     "sample": "one stats season across recent draft classes (not tracked over time)",
+    # Confirmed with the fair-value model's author; the rest are placeholders.
+    "confirmed": ["replacement_level"],
+    "under_review": ["washout_value", "sample", "contract_seasons"],
 }
 
 
