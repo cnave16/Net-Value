@@ -38,7 +38,7 @@ def build_model():
     rows = query(
         """
         SELECT dp.draft_year, dp.pick, dp.player_id, dp.player_name, p.external_id,
-               c.cap_salary, c.contract_type
+               c.cap_salary, c.later_salaries, c.contract_type
         FROM draft_picks dp
         LEFT JOIN players p ON p.player_id = dp.player_id
         LEFT JOIN player_contracts c
@@ -60,13 +60,14 @@ def build_model():
         return None
 
     table = expected_values(observations)
-    signed = {r["pick"]: r["cap_salary"] for r in rookies
+    typical = expected_values(observations, statistic="median")
+    signed = {r["pick"]: [r["cap_salary"], *(r["later_salaries"] or [])] for r in rookies
               if r["cap_salary"] is not None and r["contract_type"] == "standard"}
-    picks = pick_values(table, fill_salaries(signed))
+    salaries, estimated = fill_salaries(signed)
+    picks = pick_values(table, salaries, typical, estimated)
     by_pick = {r["pick"]: r for r in rookies}
     for slot in picks:
         rookie = by_pick.get(slot["pick"])
-        slot["salary_is_estimate"] = slot["pick"] not in signed
         slot["current_draftee"] = None if rookie is None else {
             "player_id": rookie["player_id"], "name": rookie["player_name"],
         }

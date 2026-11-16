@@ -74,7 +74,8 @@ Run `npm run lint` and `npm run build` from `frontend/` to check frontend change
 Rosters and salaries come from 2026–27 contracts loaded by
 `database_config/load_contracts.py` (see [trade analysis](docs/trades.md)).
 Rerun it to refresh them; `database_config/load_draft.py` loads draft results the
-same way. Future-pick projections, pick ownership, cap holds, exceptions, and
+same way, and `database_config/load_nba_ids.py` then fills NBA IDs for new
+players (rookies) so their headshots load. Future-pick projections, pick ownership, cap holds, exceptions, and
 contract/date restrictions still need integration.
 
 See [trade analysis](docs/trades.md) for the multi-team request, dashboard
@@ -149,6 +150,7 @@ database_config/
   enterdata.py         CSV importer targeting PROD_DATABASE_URL
   load_contracts.py    2026-27 rosters and cap salaries (Basketball-Reference)
   load_draft.py        Draft results by year (Basketball-Reference)
+  load_nba_ids.py      Missing NBA player IDs (for headshots) from Wikidata
   testdatabaseconnection.py  Standalone test and production connection checks
 player_data/
   2025-2026.csv        Player/team records used by the importer

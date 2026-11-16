@@ -7,7 +7,9 @@ career year with a Gaussian kernel (in log-pick space, since value falls
 fastest at the top of the draft), then make it non-increasing by slot.
 
 A pick's value is the expected fair value per season over its rookie contract,
-compared with the rookie salary paid at that slot.
+compared with the rookie salary paid at that slot over the same seasons. The
+median ("typical outcome") is reported alongside, since a few stars pull the
+mean up.
 
 The settings below are placeholders until Chase confirms them.
 """
@@ -44,9 +46,21 @@ def round_of(pick):
     return 1 if pick <= FIRST_ROUND_PICKS else 2
 
 
-def expected_values(observations, max_year=5):
-    """Return {(pick, career_year): expected fair value} for picks 1-60.
+def weighted_median(values, weights):
+    pairs = sorted(zip(values, weights))
+    half, running = sum(weights) / 2, 0.0
+    for value, weight in pairs:
+        running += weight
+        if running >= half:
+            return value
+    return pairs[-1][0]
 
+
+def expected_values(observations, max_year=5, statistic="mean"):
+    """Return {(pick, career_year): fair value} for picks 1-60.
+
+    statistic="mean" is the expected value (what a pick is worth on average);
+    "median" is the typical outcome, which ignores how big the rare hits are.
     observations: (pick, career_year, fair_value or None) tuples; None means the
     player had no playable minutes and counts as WASHOUT_VALUE.
     """
@@ -54,6 +68,7 @@ def expected_values(observations, max_year=5):
               for p, y, v in observations if 1 <= p <= PICKS and y >= 1]
     if not points:
         raise ValueError("No draft observations to fit.")
+    values = [v for _, _, v in points]
     table = {}
     for year in range(1, max_year + 1):
         raw, mass = [], []
@@ -62,7 +77,12 @@ def expected_values(observations, max_year=5):
             weights = [math.exp(-((x - px) / PICK_BANDWIDTH) ** 2 / 2 - ((year - py) / YEAR_BANDWIDTH) ** 2 / 2)
                        for px, py, _ in points]
             total = sum(weights)
-            raw.append(sum(w * v for w, (_, _, v) in zip(weights, points)) / total if total else WASHOUT_VALUE)
+            if not total:
+                raw.append(WASHOUT_VALUE)
+            elif statistic == "median":
+                raw.append(weighted_median(values, weights))
+            else:
+                raw.append(sum(w * v for w, v in zip(weights, values)) / total)
             mass.append(total or 1e-9)
         # A later pick is never expected to be worth more than an earlier one.
         for pick, value in enumerate(non_increasing(raw, mass), start=1):
@@ -85,39 +105,62 @@ def non_increasing(values, weights):
     return [mean for mean, _, count in blocks for _ in range(count)]
 
 
-def fill_salaries(known):
-    """Complete {pick: rookie salary} for 1-60, interpolating unsigned slots."""
-    picks = sorted(p for p in known if 1 <= p <= PICKS)
-    if not picks:
-        return {}
-    filled = {}
-    for pick in range(1, PICKS + 1):
-        if pick in known:
-            filled[pick] = float(known[pick])
-            continue
-        lower = max((p for p in picks if p < pick), default=None)
-        upper = min((p for p in picks if p > pick), default=None)
-        if lower is None or upper is None:
-            filled[pick] = float(known[lower if upper is None else upper])
-        else:
-            share = (pick - lower) / (upper - lower)
-            filled[pick] = float(known[lower]) + share * (float(known[upper]) - float(known[lower]))
-    return filled
+def fill_salaries(known, seasons=max(CONTRACT_SEASONS.values())):
+    """Complete salaries by slot and contract season.
+
+    known: {pick: [first-season salary, next season, ...]} with None where a
+    season isn't listed. Returns {pick: [salary per season]} for picks 1-60 and
+    the set of picks with any interpolated season. Each season is interpolated
+    from the nearest slots that list it, so an unsigned slot or a shorter deal
+    gets the salary typical of its neighbors.
+    """
+    filled, estimated = {pick: [] for pick in range(1, PICKS + 1)}, set()
+    for season in range(seasons):
+        listed = {p: float(v[season]) for p, v in known.items()
+                  if 1 <= p <= PICKS and len(v) > season and v[season] is not None}
+        if not listed:
+            return {}, set()
+        picks = sorted(listed)
+        for pick in range(1, PICKS + 1):
+            if pick in listed:
+                filled[pick].append(listed[pick])
+                continue
+            estimated.add(pick)
+            lower = max((p for p in picks if p < pick), default=None)
+            upper = min((p for p in picks if p > pick), default=None)
+            if lower is None or upper is None:
+                filled[pick].append(listed[lower if upper is None else upper])
+            else:
+                share = (pick - lower) / (upper - lower)
+                filled[pick].append(listed[lower] + share * (listed[upper] - listed[lower]))
+    return filled, estimated
 
 
-def pick_values(table, salaries):
-    """Value of each slot: expected fair value per season vs. first-year rookie salary."""
+def pick_values(table, salaries, typical=None, estimated=()):
+    """Value of each slot against its rookie salary over the same contract seasons.
+
+    table/typical: mean and median tables from expected_values.
+    salaries: {pick: [salary per season]} from fill_salaries.
+    """
     results = []
     for pick in range(1, PICKS + 1):
         rnd = round_of(pick)
-        by_year = [table[(pick, year)] for year in range(1, CONTRACT_SEASONS[rnd] + 1)]
-        average = sum(by_year) / len(by_year)
-        salary = salaries.get(pick)
+        seasons = CONTRACT_SEASONS[rnd]
+        by_year = [table[(pick, year)] for year in range(1, seasons + 1)]
+        average = sum(by_year) / seasons
+        typical_avg = None if typical is None else sum(typical[(pick, y)] for y in range(1, seasons + 1)) / seasons
+        pay = salaries.get(pick, [])[:seasons]
+        salary = sum(pay) / seasons if len(pay) == seasons else None
         results.append({
-            "pick": pick, "round": rnd, "contract_seasons": CONTRACT_SEASONS[rnd],
+            "pick": pick, "round": rnd, "contract_seasons": seasons,
             "expected_value_by_season": [round(v) for v in by_year],
             "expected_value_per_season": round(average),
-            "rookie_salary": None if salary is None else round(salary),
+            "typical_value_per_season": None if typical_avg is None else round(typical_avg),
+            "rookie_salary": round(pay[0]) if pay else None,
+            "salary_by_season": [round(v) for v in pay],
+            "salary_per_season": None if salary is None else round(salary),
             "surplus_per_season": None if salary is None else round(average - salary),
+            "typical_surplus_per_season": None if salary is None or typical_avg is None else round(typical_avg - salary),
+            "salary_is_estimate": pick in estimated,
         })
     return results

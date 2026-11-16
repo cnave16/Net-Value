@@ -133,9 +133,14 @@ python database_config/load_contracts.py
 ```
 
 - **Matching.** Contract players are matched to `players` by normalized name
-  (case, accents, punctuation, and Jr./II/III ignored); the load stops if a name
-  matches more than one player. Unmatched players, mostly rookies, get a new
-  `players` row without an NBA external ID.
+  (case, accents, punctuation, and Jr./II/III ignored, plus `NAME_ALIASES` for
+  nicknames such as Ron/Ronald Holland); the load stops if a name matches more
+  than one player. Unmatched players, mostly rookies, get a new `players` row;
+  `load_nba_ids.py` then fills their NBA IDs from Wikidata and reports any
+  player whose ID already belongs to another row, i.e. a missed match that
+  needs an alias.
+- **Later seasons.** `later_salaries` holds the next three seasons' salaries
+  (null where none is listed); the draft model uses them for rookie contracts.
 - **Two-way contracts** count as zero against the cap (`cap_salary = 0`,
   `contract_type = 'two_way'`). A blank salary is treated as two-way only when
   the source's payroll note says so.

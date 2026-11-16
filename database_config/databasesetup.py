@@ -144,6 +144,8 @@ CREATE TABLE IF NOT EXISTS player_contracts (
     -- Salary that counts against the cap. Two-way contracts count as zero;
     -- NULL means the source has not listed a standard contract's salary yet.
     cap_salary NUMERIC(14, 2) CHECK (cap_salary >= 0),
+    -- Salaries for the following seasons, in order; NULL where none is listed.
+    later_salaries NUMERIC(14, 2)[] NOT NULL DEFAULT '{}',
     contract_type VARCHAR(20) NOT NULL
         CHECK (contract_type IN ('standard', 'two_way')),
     CHECK (contract_type = 'standard' OR cap_salary = 0),
@@ -213,6 +215,13 @@ CREATE TABLE IF NOT EXISTS draft_picks (
 """
 
 
+# Columns added after a table was first created; safe to rerun.
+ALTER_TABLES_SQL = """
+ALTER TABLE player_contracts
+    ADD COLUMN IF NOT EXISTS later_salaries NUMERIC(14, 2)[] NOT NULL DEFAULT '{}';
+"""
+
+
 CREATE_INDEXES_SQL = """
 CREATE INDEX IF NOT EXISTS idx_player_contracts_team
     ON player_contracts(season_start_year, team_id);
@@ -251,6 +260,7 @@ def setup_database():
 
         print("Creating tables...")
         cursor.execute(CREATE_TABLES_SQL)
+        cursor.execute(ALTER_TABLES_SQL)
 
         print("Creating indexes...")
         cursor.execute(CREATE_INDEXES_SQL)

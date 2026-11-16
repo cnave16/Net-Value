@@ -59,15 +59,30 @@ def test_non_increasing_averages_violators_instead_of_cutting():
     assert dv.non_increasing([3, 2, 1], [1, 1, 1]) == [3, 2, 1]
 
 
-def test_fill_salaries_interpolates_unsigned_slots():
-    filled = dv.fill_salaries({1: 100, 3: 80, 60: 10})
-    assert filled[2] == 90 and filled[1] == 100 and filled[59] == pytest.approx(10 + 70 / 57)
+def test_median_is_typical_outcome_not_pulled_up_by_a_star():
+    # One star among washouts at the same slot: the mean rises, the median doesn't.
+    observations = [(5, 1, 50e6)] + [(5, 1, None)] * 6
+    mean = dv.expected_values(observations, max_year=1)[(5, 1)]
+    median = dv.expected_values(observations, max_year=1, statistic="median")[(5, 1)]
+    assert mean > 5 * median and median == pytest.approx(dv.WASHOUT_VALUE)
 
 
-def test_pick_values_use_contract_length_by_round():
-    table = {(p, y): 10e6 - p * 1e5 + y * 1e6 for p in range(1, 61) for y in range(1, 5)}
-    values = {v["pick"]: v for v in dv.pick_values(table, {1: 5e6, 31: 2e6})}
-    assert values[1]["contract_seasons"] == 4 and len(values[1]["expected_value_by_season"]) == 4
-    assert values[31]["contract_seasons"] == 2
-    assert values[1]["surplus_per_season"] == values[1]["expected_value_per_season"] - 5_000_000
-    assert values[2]["rookie_salary"] is None
+def test_fill_salaries_interpolates_each_season_separately():
+    filled, estimated = dv.fill_salaries({1: [100, 110, 120, 130], 3: [80, 84, None, None], 60: [10, 12, 14, 16]})
+    assert filled[1] == [100, 110, 120, 130] and 1 not in estimated
+    assert filled[2][:2] == [90, 97] and 2 in estimated
+    # Pick 3's missing later seasons come from its neighbors that list them.
+    assert filled[3][:2] == [80, 84] and 3 in estimated
+    assert filled[3][2] == pytest.approx(120 + (14 - 120) * 2 / 59)
+
+
+def test_pick_values_compare_value_and_salary_over_the_same_seasons():
+    table = {(p, y): 10e6 + y * 1e6 for p in range(1, 61) for y in range(1, 5)}
+    salaries = {p: [4e6, 5e6, 6e6, 7e6] for p in range(1, 61)}
+    values = {v["pick"]: v for v in dv.pick_values(table, salaries, table, {2})}
+    first, second = values[1], values[31]
+    assert first["contract_seasons"] == 4 and first["salary_per_season"] == 5_500_000
+    assert first["surplus_per_season"] == 12_500_000 - 5_500_000
+    assert first["typical_surplus_per_season"] == first["surplus_per_season"]
+    assert second["contract_seasons"] == 2 and second["salary_per_season"] == 4_500_000
+    assert values[2]["salary_is_estimate"] and not first["salary_is_estimate"]

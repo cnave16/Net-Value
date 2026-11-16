@@ -221,11 +221,14 @@ A nonexistent player returns 404; a malformed body returns 400.
 - `expected_value_by_season` and `expected_value_per_season`: Chase's fair values
   for past picks at that slot in career years 1–4 (round 1) or 1–2 (round 2),
   smoothed across nearby slots and made non-increasing by slot.
-- `rookie_salary`: first-season cap salary of this year's pick at the slot;
-  `salary_is_estimate` is true when that pick is unsigned and the salary is
-  interpolated from neighbors.
-- `surplus_per_season` (value minus salary), `contract_seasons`, `round`, and
-  `current_draftee` (`player_id`, `name`).
+- `typical_value_per_season`: the same, using the kernel-weighted median
+  (what most players at the slot turn into) instead of the mean.
+- `salary_by_season` and `salary_per_season`: what this year's pick at the slot
+  is paid over the same seasons; `rookie_salary` is the first season.
+  `salary_is_estimate` is true when any season is interpolated from neighboring
+  slots (an unsigned pick, or a deal shorter than the valued seasons).
+- `surplus_per_season` and `typical_surplus_per_season` (value minus salary per
+  season), `contract_seasons`, `round`, and `current_draftee` (`player_id`, `name`).
 
 `meta` gives the stats season, the draft classes used, the sample size, and the
 placeholder `assumptions` (`data_model/draft_value.py`). Missing draft or stats
