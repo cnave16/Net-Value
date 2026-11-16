@@ -282,3 +282,45 @@ def test_player_list_hides_players_without_a_current_contract(client, monkeypatc
     assert ("FROM player_contracts rc" in sql) is filtered
     assert params == ((2026, 2026, 20, 0) if filtered else (2026, 20, 0))
     assert response.json["meta"]["roster"] == query_string.get("roster", "current")
+
+
+def test_player_list_sorts_by_value_with_missing_last(client, monkeypatch, no_fair_values):
+    no_fair_values.return_value = (2026, {"1": 30e6, "2": 10e6, "3": 25e6})
+    rows = [
+        {"id": 1, "name": "Star", "external_id": "1", "team": "BOS", "cap_salary": Decimal("20000000"), "contract_type": "standard"},
+        {"id": 2, "name": "Bust", "external_id": "2", "team": "BOS", "cap_salary": Decimal("40000000"), "contract_type": "standard"},
+        {"id": 3, "name": "Bargain", "external_id": "3", "team": "LAL", "cap_salary": Decimal("5000000"), "contract_type": "standard"},
+        {"id": 4, "name": "Two Way", "external_id": None, "team": "LAL", "cap_salary": Decimal("0"), "contract_type": "two_way"},
+    ]
+    for row in rows:
+        row["games"] = 70
+    monkeypatch.setattr(catalog, "query", MagicMock(return_value=rows))
+    best = client.get("/api/players?sort=best_value").json
+    assert [p["name"] for p in best["data"]] == ["Bargain", "Star", "Bust", "Two Way"]
+    assert best["meta"]["total"] == 4 and best["meta"]["sort"] == "best_value"
+    worst = client.get("/api/players?sort=worst_value&limit=2&page=1").json
+    assert [p["name"] for p in worst["data"]] == ["Bust", "Star"] and worst["meta"]["total_pages"] == 2
+    salary = client.get("/api/players?sort=salary").json["data"]
+    assert [p["name"] for p in salary] == ["Bust", "Star", "Bargain", "Two Way"]
+
+
+def test_player_list_rejects_unknown_sort(client):
+    assert client.get("/api/players?sort=height").status_code == 400
+
+
+def test_value_sorts_rank_short_seasons_after_full_ones(client, monkeypatch, no_fair_values):
+    # An injured star (16 games) has a low fair value; don't rank him the worst contract.
+    no_fair_values.return_value = (2026, {"1": 2e6, "2": 10e6})
+    rows = [
+        {"id": 1, "name": "Injured Star", "external_id": "1", "team": "BOS", "cap_salary": Decimal("50000000"),
+         "contract_type": "standard", "games": 16},
+        {"id": 2, "name": "Overpaid Vet", "external_id": "2", "team": "BOS", "cap_salary": Decimal("30000000"),
+         "contract_type": "standard", "games": 70},
+    ]
+    monkeypatch.setattr(catalog, "query", MagicMock(return_value=rows))
+    worst = client.get("/api/players?sort=worst_value").json
+    assert [p["name"] for p in worst["data"]] == ["Overpaid Vet", "Injured Star"]
+    assert worst["meta"]["min_ranked_games"] == 41 and worst["meta"]["ranked_count"] == 1
+    # Salary sort is unaffected by games played.
+    salary = client.get("/api/players?sort=salary").json["data"]
+    assert [p["name"] for p in salary] == ["Injured Star", "Overpaid Vet"]

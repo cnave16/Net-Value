@@ -8,8 +8,8 @@ import * as mock from './mockData.js'
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? '/api'
 
-// Sample data until the 11/10 integration pass; set VITE_USE_MOCK=false for live Flask.
-export const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'
+// Live Flask by default; set VITE_USE_MOCK=true to work on the UI without a backend.
+export const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
 const client = axios.create({ baseURL: API_BASE_URL, timeout: 10000 })
 
@@ -40,9 +40,11 @@ async function request(config) {
 
 // ---- Catalog ----
 
-export function getPlayers({ search = '', page = 1, limit = 20, seasonId, team } = {}) {
+// sort: 'name' (default), 'best_value', 'worst_value', or 'salary'.
+export function getPlayers({ search = '', page = 1, limit = 20, seasonId, team, sort } = {}) {
   if (USE_MOCK) return mock.getPlayers({ search, page, limit })
   const params = { page, limit }
+  if (sort && sort !== 'name') params.sort = sort
   if (search) params.search = search
   if (seasonId) params.season_id = seasonId
   if (team) params.team = team

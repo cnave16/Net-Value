@@ -128,7 +128,7 @@ export default function DraftPage() {
     return (
       <section className="page">
         <h1>Draft Pick Value</h1>
-        <p className="muted">Draft values need the live backend. Set VITE_USE_MOCK=false in frontend/.env.local and restart Vite.</p>
+        <p className="muted">Draft values need the live backend. Remove VITE_USE_MOCK=true from frontend/.env.local and restart Vite.</p>
       </section>
     )
   }

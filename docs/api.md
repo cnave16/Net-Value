@@ -101,7 +101,13 @@ An ID of zero or above 2147483647 returns 400. A valid ID with no player returns
 By default the list includes only players on a 2026–27 roster (a row in
 `player_contracts`); `roster=all` also returns free agents and other players kept
 for historical stats and the models. Any other `roster` value returns 400, and
-`meta.roster` echoes the filter. `/players/<id>` and `/valuation` work for every
+`meta.roster` echoes the filter. `sort` orders the list: `name` (default),
+`best_value` (largest surplus first), `worst_value` (most negative first), or
+`salary` (highest first). The value sorts rank players with at least
+`meta.min_ranked_games` (41) games in the stats season first, since fair value
+grows with minutes and an injury-shortened season would otherwise read as a bad
+contract; `meta.ranked_count` says how many qualified. Players without the sort
+field come last. `/players/<id>` and `/valuation` work for every
 player either way.
 
 Team filtering means **played for that team in that season**, not current

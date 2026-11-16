@@ -37,11 +37,11 @@ npm ci
 npm run dev
 ```
 
-The app defaults to sample data. For live backend requests, create or update
-`frontend/.env.local` with:
+The app calls the live backend by default. To work on the UI with sample data
+and no backend, create or update `frontend/.env.local` with:
 
 ```dotenv
-VITE_USE_MOCK=false
+VITE_USE_MOCK=true
 ```
 
 Restart Vite after changing environment settings. Open the address printed by
@@ -61,7 +61,7 @@ part of a production build; hosting will need an API proxy or an explicit API UR
 
 ## Check the combined app
 
-1. Open `/players` with `VITE_USE_MOCK=false` and confirm real names load.
+1. Open `/players` and confirm real names load (sample data is off by default).
 2. Search for a player, select the result, and confirm the detail panel loads.
 3. The detail panel should show fair value, salary, and surplus. A player
    without a 2026–27 contract or without last season's stats explains why a

@@ -52,9 +52,9 @@ For React setup and a first end-to-end request, see the
 
 Elias's React app lives in `frontend/`. In a second terminal, with Node.js
 22.12 or newer installed, run `npm ci` and `npm run dev` from that folder.
-It defaults to sample data. Set `VITE_USE_MOCK=false` in `frontend/.env.local`
-and restart Vite to connect to Flask on port 5001 through the `/api` proxy.
-Player search, details, and the multi-team trade simulator are available; the draft screen is a placeholder.
+It connects to Flask on port 5001 through the `/api` proxy by default; set
+`VITE_USE_MOCK=true` in `frontend/.env.local` to use sample data without a backend.
+Player search and value, the multi-team trade simulator, and draft pick values are available.
 
 Run `npm run lint` and `npm run build` from `frontend/` to check frontend changes.
 

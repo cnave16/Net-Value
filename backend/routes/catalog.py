@@ -63,6 +63,9 @@ def players():
     roster = request.args.get("roster", "current")
     if roster not in ("current", "all"):
         raise BadRequest("roster must be 'current' or 'all'.")
+    sort = request.args.get("sort", "name")
+    if sort not in SORTS:
+        raise BadRequest(f"sort must be one of: {', '.join(SORTS)}.")
 
     # Keep SQL conditions separate from the values supplied by the user.
     conditions, params = [], []
@@ -91,7 +94,12 @@ def players():
             "WHERE rc.player_id = p.player_id AND rc.season_start_year = %s)"
         )
         params.append(TRADE_SEASON_START_YEAR)
-    where =" WHERE " + " AND ".join(conditions) if conditions else ""
+    where = " WHERE " + " AND ".join(conditions) if conditions else ""
+    stats_year, values = fair_values()
+    rookies = rookie_estimates()
+    meta = {"season_id": season_id, "team_filter": team or None, "roster": roster, "sort": sort}
+    if sort != "name":
+        return sorted_players(where, params, values, rookies, sort, page, limit, meta, stats_year)
     # filtered holds all matches; paged selects only the requested slice.
     # One query keeps the total and results consistent during data imports.
     # The final LEFT JOIN keeps the total even when that page has no players.
@@ -107,16 +115,66 @@ def players():
         tuple(params + [TRADE_SEASON_START_YEAR, limit, (page - 1) * limit]),
     )
     # An empty page has a count-only row; don't return it as a player.
-    _, values = fair_values()
-    rookies = rookie_estimates()
     data = [player_response(row, values, rookies) for row in rows if row["id"] is not None]
-    total = rows[0]["total"]
-    return success(data, {
-        "page": page, "limit": limit, "total": total,
-        # Round up so a partly filled last page still counts as a page.
-        "total_pages": (total + limit - 1) // limit,
-        "season_id": season_id, "team_filter": team or None, "roster": roster,
-    })
+    return success(data, page_meta(rows[0]["total"], page, limit, meta))
+
+
+# Value sorts rank players with at least this many games in the stats season
+# first. Fair value grows with minutes, so an injury-shortened season would
+# otherwise rank a star (e.g. 16 games) among the worst contracts.
+MIN_RANKED_GAMES = 41
+
+# sort value -> (response field, descending). Players missing the field go last.
+SORTS = {
+    "name": None,
+    "best_value": ("surplus", True),     # most underpaid first
+    "worst_value": ("surplus", False),   # most overpaid first
+    "salary": ("salary", True),
+}
+
+
+def page_meta(total, page, limit, meta):
+    # Round up so a partly filled last page still counts as a page.
+    return {"page": page, "limit": limit, "total": total,
+            "total_pages": (total + limit - 1) // limit, **meta}
+
+
+def sorted_players(where, params, values, rookies, sort, page, limit, meta, stats_year):
+    """Sort by a computed field (fair value is calculated in Python, not SQL).
+
+    The current-roster list is about 530 players, so ranking them all per
+    request is cheap; the requested page is sliced afterwards. Order: ranked
+    players, then (value sorts only) players under MIN_RANKED_GAMES, then
+    players without the field.
+    """
+    rows = query(
+        "WITH filtered AS (SELECT p.player_id AS id, "
+        "p.first_name || ' ' || p.last_name AS name, p.external_id FROM players p"
+        + where + ") SELECT f.*, ct.abbreviation AS team, c.cap_salary, c.contract_type, "
+        "(SELECT SUM(pts.games_played) FROM player_seasons ps "
+        "JOIN seasons s ON s.season_id = ps.season_id "
+        "JOIN player_team_seasons pts ON pts.player_season_id = ps.player_season_id "
+        "WHERE ps.player_id = f.id AND s.end_year = %s) AS games "
+        "FROM filtered f " + CONTRACT_JOIN.format(player="f.id"),
+        tuple(params + [stats_year, TRADE_SEASON_START_YEAR]),
+    )
+    field, descending = SORTS[sort]
+    value_sort = field == "surplus"
+    groups = ([], [], [])
+    for row in rows:
+        player = player_response(row, values, rookies)
+        if player[field] is None:
+            groups[2].append(player)
+        elif value_sort and player["value_basis"] == "stats" and (row.get("games") or 0) < MIN_RANKED_GAMES:
+            groups[1].append(player)
+        else:
+            groups[0].append(player)
+    by_field = lambda p: (-p[field] if descending else p[field], p["name"], p["id"])  # noqa: E731
+    ranked = sorted(groups[0], key=by_field) + sorted(groups[1], key=by_field) \
+        + sorted(groups[2], key=lambda p: (p["name"], p["id"]))
+    if value_sort:
+        meta = {**meta, "min_ranked_games": MIN_RANKED_GAMES, "ranked_count": len(groups[0])}
+    return success(ranked[(page - 1) * limit:page * limit], page_meta(len(ranked), page, limit, meta))
 
 
 # A player's current team and cap salary; at most one contract per season.
