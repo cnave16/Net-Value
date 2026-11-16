@@ -131,10 +131,65 @@ CREATE TABLE IF NOT EXISTS team_seasons (
             OR losses >= 0
         )
 );
+
+-- Current rosters and cap salaries for an upcoming or in-progress season,
+-- loaded by database_config/load_contracts.py. One team per player per season.
+CREATE TABLE IF NOT EXISTS player_contracts (
+    player_contract_id SERIAL PRIMARY KEY,
+
+    season_start_year INTEGER NOT NULL,
+    player_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+
+    -- Salary that counts against the cap. Two-way contracts count as zero;
+    -- NULL means the source has not listed a standard contract's salary yet.
+    cap_salary NUMERIC(14, 2) CHECK (cap_salary >= 0),
+    contract_type VARCHAR(20) NOT NULL
+        CHECK (contract_type IN ('standard', 'two_way')),
+    CHECK (contract_type = 'standard' OR cap_salary = 0),
+
+    source_player_id VARCHAR(20) NOT NULL,
+    source_url TEXT NOT NULL,
+    retrieved_at TIMESTAMPTZ NOT NULL,
+
+    CONSTRAINT fk_player_contracts_player
+        FOREIGN KEY (player_id)
+        REFERENCES players(player_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_player_contracts_team
+        FOREIGN KEY (team_id)
+        REFERENCES teams(team_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT unique_player_contract_season
+        UNIQUE (season_start_year, player_id)
+);
+
+-- The source's team payroll total. The amount above the listed players'
+-- salaries is dead money and other charges for waived players.
+CREATE TABLE IF NOT EXISTS team_cap_sheets (
+    season_start_year INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+
+    source_total_salary NUMERIC(14, 2) NOT NULL CHECK (source_total_salary >= 0),
+    source_url TEXT NOT NULL,
+    retrieved_at TIMESTAMPTZ NOT NULL,
+
+    PRIMARY KEY (season_start_year, team_id),
+
+    CONSTRAINT fk_team_cap_sheets_team
+        FOREIGN KEY (team_id)
+        REFERENCES teams(team_id)
+        ON DELETE CASCADE
+);
 """
 
 
 CREATE_INDEXES_SQL = """
+CREATE INDEX IF NOT EXISTS idx_player_contracts_team
+    ON player_contracts(season_start_year, team_id);
+
 CREATE INDEX IF NOT EXISTS idx_player_seasons_player
     ON player_seasons(player_id);
 

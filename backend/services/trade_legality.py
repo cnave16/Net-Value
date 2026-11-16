@@ -5,8 +5,8 @@ from decimal import Decimal, ROUND_DOWN
 from .trade_finances import dollar, money
 
 NOT_CHECKED = [
-    "authoritative_current_roster_ownership",
-    "cap_holds_dead_money_and_apron_salary_adjustments",
+    "official_league_roster_ownership",
+    "cap_holds_and_apron_salary_adjustments",
     "existing_hard_caps_and_exception_history",
     "preexisting_trade_exceptions_and_other_acquisition_exceptions",
     "contract_guarantees_trade_bonuses_and_special_matching_salaries",
@@ -135,5 +135,5 @@ def check_trade(teams, team_ids, outgoing, incoming, cap_context):
         "passes_supported_rules": False if failed else (None if unknown else True),
         "roster_checks_passed": roster_checks_passed,
         "checks": checks, "not_checked": list(NOT_CHECKED),
-        "basis": "provisional_contract_values_and_roster_only_team_salary",
+        "basis": "current_contracts_and_source_dead_money",
     }

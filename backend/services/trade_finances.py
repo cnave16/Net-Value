@@ -50,7 +50,7 @@ def payroll(before, after):
     after_total, missing_after = snapshot(after)
     difference = None if before_total is None or after_total is None else after_total - before_total
     return {
-        "currency": "USD", "basis": "contract_value_assumed_annual_usd",
+        "currency": "USD", "basis": "player_contracts_cap_salary",
         "before": dollar(before_total), "after": dollar(after_total),
         "net_difference": dollar(difference),
         "missing_actual_before": missing_before, "missing_actual_after": missing_after,
@@ -62,7 +62,7 @@ def cap_comparison(salaries, context):
     limit = money(context.get("salary_cap"))
     charges = money(context.get("other_cap_charges"))
     before_payroll, after_payroll = money(salaries["before"]), money(salaries["after"])
-    # The adapter explicitly supplies zero when excluding untracked cap charges.
+    # Charges are the cap sheet's dead money, or an explicit zero without one.
     before = None if None in (limit, charges, before_payroll) else limit - charges - before_payroll
     after = None if None in (limit, charges, after_payroll) else limit - charges - after_payroll
     return {

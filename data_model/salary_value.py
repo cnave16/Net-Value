@@ -171,6 +171,29 @@ def _compute_salary_allocations(
 
     return dict(zip(ids, salaries))
 
+def league_fair_salaries(cursor, season_end_year=None, **allocation_options):
+    """Return (season_end_year, {external_id: fair annual salary}) for every player.
+
+    Uses an existing cursor, so callers such as the Flask API can reuse their
+    connection and cache the result. Raises ValueError for an incomplete season.
+    """
+    year, players = _fetch_season_players(cursor, season_end_year)
+
+    # Ensure the valuation isn't drastically inflated by an incomplete import
+    # or an in-progress season with only a fraction of NBA games played.
+    expected_minutes = NBA_TEAMS * NBA_GAMES * MINUTES_PER_TEAM_GAME
+    total_minutes = sum(player.minutes for player in players)
+    if total_minutes < expected_minutes * MIN_LEAGUE_MINUTES_COVERAGE:
+        raise ValueError(
+            f"Season ending {year} has only {total_minutes:,.0f} player "
+            f"minutes loaded ({total_minutes / expected_minutes:.1%} of "
+            "regulation league minutes). Import a complete regular season "
+            "before estimating full-season salaries."
+        )
+
+    return year, _compute_salary_allocations(players, **allocation_options)
+
+
 def estimate_fair_salary(
     player_id,
     *,
@@ -216,33 +239,20 @@ def estimate_fair_salary(
 
     with closing(psycopg2.connect(url)) as connection:
         with connection.cursor() as cursor:
-            year, players = _fetch_season_players(cursor, season_end_year)
+            year, allocations = league_fair_salaries(
+                cursor,
+                season_end_year,
+                team_salary_cap=team_salary_cap,
+                base_salary=base_salary,
+                replacement_lebron=replacement_lebron,
+                max_salary_fraction=max_salary_fraction,
+            )
 
-    # Ensure the valuation isn't drastically inflated by an incomplete import
-    # or an in-progress season with only a fraction of NBA games played.
-    expected_minutes = NBA_TEAMS * NBA_GAMES * MINUTES_PER_TEAM_GAME
-    total_minutes = sum(player.minutes for player in players)
-    if total_minutes < expected_minutes * MIN_LEAGUE_MINUTES_COVERAGE:
-        raise ValueError(
-            f"Season ending {year} has only {total_minutes:,.0f} player "
-            f"minutes loaded ({total_minutes / expected_minutes:.1%} of "
-            "regulation league minutes). Import a complete regular season "
-            "before estimating full-season salaries."
-        )
-
-    if not any(player.external_id == external_id for player in players):
+    if external_id not in allocations:
         raise LookupError(
             f"Player external ID {external_id!r} has no playable LEBRON "
             f"statistics in the season ending {year}."
         )
-
-    allocations = _compute_salary_allocations(
-        players,
-        team_salary_cap=team_salary_cap,
-        base_salary=base_salary,
-        replacement_lebron=replacement_lebron,
-        max_salary_fraction=max_salary_fraction,
-    )
     return round(allocations[external_id])
 
 if __name__ == "__main__":

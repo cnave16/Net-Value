@@ -21,6 +21,14 @@ def client(app):
     return app.test_client()
 
 
+@pytest.fixture(autouse=True)
+def no_fair_values(monkeypatch):
+    # The league valuation needs a database; most tests only check routing.
+    values = MagicMock(return_value=(None, {}))
+    monkeypatch.setattr(catalog, "fair_values", values)
+    return values
+
+
 def test_health_does_not_require_database(client):
     assert client.get("/api/health").json == {
         "data": {"status": "ok"}, "error": None, "meta": {}
@@ -51,7 +59,7 @@ def test_search_is_bound_and_missing_values_are_null(client, monkeypatch):
     assert response.status_code == 200
     sql, params = query.call_args.args
     assert "O'Neal" not in sql
-    assert params == ("%O'Neal\\%\\_%", 2, "BOS", 20, 0)
+    assert params == ("%O'Neal\\%\\_%", 2, "BOS", 2026, 20, 0)
     assert response.json["data"][0]["salary"] is None
     assert response.json["data"][0]["team"] is None
     assert response.json["meta"]["total"] == 1
@@ -104,13 +112,65 @@ def test_connection_is_reused_and_closed(app, monkeypatch):
     connection.close.assert_called_once()
 
 
-@pytest.mark.parametrize("method,path", [
-    ("post", "/api/valuation"), ("get", "/api/picks")
-])
-def test_pending_features_do_not_claim_analysis(client, method, path):
-    response = getattr(client, method)(path)
+def test_pending_features_do_not_claim_analysis(client):
+    response = client.get("/api/picks")
     assert response.status_code == 501
     assert response.json["error"]["code"] == "NOT_IMPLEMENTED"
+
+
+def contract_row(**overrides):
+    return {"id": 7, "name": "Sample Player", "external_id": "123", "team": "BOS",
+            "cap_salary": Decimal("20000000.00"), "contract_type": "standard", **overrides}
+
+
+def test_valuation_compares_fair_value_and_cap_salary(client, monkeypatch, no_fair_values):
+    no_fair_values.return_value = (2026, {"123": 25000000.4})
+    query = MagicMock(return_value=[contract_row()])
+    monkeypatch.setattr(catalog, "query", query)
+    response = client.post("/api/valuation", json={"player_id": 7})
+    assert response.status_code == 200
+    assert response.json["data"] == {
+        "player_id": 7, "salary": 20000000.0, "predicted_value": 25000000.0,
+        "surplus": 5000000.0, "contract_type": "standard",
+    }
+    assert response.json["meta"]["stats_season_end_year"] == 2026
+    assert query.call_args.args[1] == (2026, 7)
+
+
+@pytest.mark.parametrize("row,salary,fair", [
+    # Two-way pay isn't listed, so neither salary nor surplus is shown.
+    (contract_row(cap_salary=Decimal("0"), contract_type="two_way"), None, 25000000.0),
+    # A standard contract whose salary the source hasn't listed yet.
+    (contract_row(cap_salary=None), None, 25000000.0),
+    # No current contract.
+    (contract_row(team=None, cap_salary=None, contract_type=None), None, 25000000.0),
+    # A new player without an NBA ID has no stats to value.
+    (contract_row(external_id=None), 20000000.0, None),
+])
+def test_valuation_missing_pieces_stay_null(client, monkeypatch, no_fair_values, row, salary, fair):
+    no_fair_values.return_value = (2026, {"123": 25000000})
+    monkeypatch.setattr(catalog, "query", MagicMock(return_value=[row]))
+    data = client.post("/api/valuation", json={"player_id": 7}).json["data"]
+    assert data["salary"] == salary and data["predicted_value"] == fair
+    assert data["surplus"] is None
+
+
+@pytest.mark.parametrize("body", [{}, {"player_id": "7"}, {"player_id": True}, {"player_id": 7, "x": 1}])
+def test_valuation_bad_request(client, body):
+    assert client.post("/api/valuation", json=body).status_code == 400
+
+
+def test_valuation_unknown_player(client, monkeypatch):
+    monkeypatch.setattr(catalog, "query", MagicMock(return_value=[]))
+    assert client.post("/api/valuation", json={"player_id": 7}).status_code == 404
+
+
+def test_player_list_includes_current_team_and_value(client, monkeypatch, no_fair_values):
+    no_fair_values.return_value = (2026, {"123": 15000000})
+    monkeypatch.setattr(catalog, "query", MagicMock(return_value=[{**contract_row(), "total": 1}]))
+    player = client.get("/api/players").json["data"][0]
+    assert player["team"] == "BOS"
+    assert player["salary"] == 20000000.0 and player["surplus"] == -5000000.0
 
 
 def test_cors_allows_configured_frontend_only(client):

@@ -5,6 +5,8 @@ from werkzeug.exceptions import BadRequest, NotFound
 
 from ..database import query
 from ..responses import success
+from ..services.trade_finances import TRADE_SEASON_START_YEAR
+from ..services.valuation import fair_values, valuation
 
 catalog = Blueprint("catalog", __name__)
 
@@ -84,14 +86,17 @@ def players():
     rows = query(
         "WITH filtered AS (SELECT p.player_id AS id, "
         "p.first_name || ' ' || p.last_name AS name, p.external_id FROM players p"
-        + where + "), paged AS (SELECT * FROM filtered ORDER BY name, id LIMIT %s OFFSET %s) "
+        + where + "), paged AS (SELECT f.*, ct.abbreviation AS team, c.cap_salary, c.contract_type "
+        "FROM filtered f " + CONTRACT_JOIN.format(player="f.id")
+        + " ORDER BY name, id LIMIT %s OFFSET %s) "
         "SELECT paged.*, totals.total FROM (SELECT COUNT(*) AS total FROM filtered) totals "
         "LEFT JOIN paged ON TRUE ORDER BY paged.name, paged.id",
         # Skip earlier pages: page 2 with a limit of 20 skips the first 20 rows.
-        tuple(params + [limit, (page - 1) * limit]),
+        tuple(params + [TRADE_SEASON_START_YEAR, limit, (page - 1) * limit]),
     )
     # An empty page has a count-only row; don't return it as a player.
-    data = [player_response(row) for row in rows if row["id"] is not None]
+    _, values = fair_values()
+    data = [player_response(row, values) for row in rows if row["id"] is not None]
     total = rows[0]["total"]
     return success(data, {
         "page": page, "limit": limit, "total": total,
@@ -101,28 +106,63 @@ def players():
     })
 
 
-def player_response(row):
+# A player's current team and cap salary; at most one contract per season.
+CONTRACT_JOIN = (
+    "LEFT JOIN player_contracts c ON c.player_id = {player} AND c.season_start_year = %s "
+    "LEFT JOIN teams ct ON ct.team_id = c.team_id"
+)
+
+
+def player_response(row, values):
     # Use the same player fields for search results and individual lookups.
+    # team is the current (2026-27) contract team; null for players without one.
     return {
         "id": row["id"], "name": row["name"], "external_id": row["external_id"],
-        # Historical team membership does not establish a player's current team.
-        # Salary and model outputs stay null until those sources are connected.
-        "team": None, "salary": None, "predicted_value": None, "surplus": None,
+        "team": row.get("team"),
+        **valuation(row["external_id"], row.get("cap_salary"), row.get("contract_type"), values),
     }
 
 
-@catalog.get("/players/<int:player_id>")
-def player(player_id):
+def find_player(player_id):
     # Look up our database ID, not an external provider's player ID.
     if not 1 <= player_id <= 2147483647:
         raise BadRequest("player_id must be a positive database integer ID.")
     rows = query(
-        "SELECT player_id AS id, first_name || ' ' || last_name AS name, "
-        "external_id FROM players WHERE player_id = %s", (player_id,)
+        "SELECT p.player_id AS id, p.first_name || ' ' || p.last_name AS name, p.external_id, "
+        "ct.abbreviation AS team, c.cap_salary, c.contract_type FROM players p "
+        + CONTRACT_JOIN.format(player="p.player_id") + " WHERE p.player_id = %s",
+        (TRADE_SEASON_START_YEAR, player_id),
     )
     if not rows:
         raise NotFound("Player not found.")
-    return success({**player_response(rows[0]), "seasons": player_seasons(player_id)})
+    return rows[0]
+
+
+@catalog.get("/players/<int:player_id>")
+def player(player_id):
+    row = find_player(player_id)
+    _, values = fair_values()
+    return success({**player_response(row, values), "seasons": player_seasons(player_id)})
+
+
+@catalog.post("/valuation")
+def player_valuation():
+    """Fair value (Chase's model) against the player's 2026-27 cap salary."""
+    body = request.get_json()
+    if not isinstance(body, dict) or set(body) != {"player_id"} or type(body["player_id"]) is not int:
+        raise BadRequest("Provide only player_id as a database integer ID.")
+    row = find_player(body["player_id"])
+    year, values = fair_values()
+    return success(
+        {"player_id": row["id"], **valuation(row["external_id"], row.get("cap_salary"),
+                                              row.get("contract_type"), values)},
+        {
+            "fair_value_basis": "league_cap_budget_by_lebron_above_replacement_times_minutes",
+            "stats_season_end_year": year,
+            "salary_season": {"start_year": TRADE_SEASON_START_YEAR, "end_year": TRADE_SEASON_START_YEAR + 1},
+            "salary_source": "player_contracts.cap_salary",
+        },
+    )
 
 
 def number(value):

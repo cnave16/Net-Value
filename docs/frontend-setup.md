@@ -2,7 +2,8 @@
 
 Elias can build team and season selection, player search, and roster win
 projections against the current API. The trade simulator at `/trade` is wired
-to the multi-team trade API; player valuation and draft picks still return 501. See
+to the multi-team trade API, and player valuation returns fair value and salary;
+draft picks still return 501. See
 [the API contract](api.md) for the exact fields.
 
 ## Start the backend
@@ -62,7 +63,9 @@ part of a production build; hosting will need an API proxy or an explicit API UR
 
 1. Open `/players` with `VITE_USE_MOCK=false` and confirm real names load.
 2. Search for a player, select the result, and confirm the detail panel loads.
-3. Salary and value should show unavailable, with the valuation-model message.
+3. The detail panel should show fair value, salary, and surplus. A player
+   without a 2026–27 contract or without last season's stats explains why a
+   value is missing.
 4. Open `/trade`, pick two teams, check a player on each, and analyze. Add a
    third team to route players between several teams, or use a team's "Top
    targets" list to pull a player and their team into the trade.
@@ -107,7 +110,7 @@ roster block the trade in the UI, matching the backend's ownership check.
 | `null` salary, team, or value | Show “Unavailable,” not zero |
 | 400, 413, 415, or 422 | Explain the input or data issue |
 | 503 | Show that the database is unavailable and allow a retry |
-| 501 on valuation or picks | Show that the feature is not available yet |
+| 501 on picks | Show that the feature is not available yet |
 | Trade `analysis_available: false` | Show the failed roster checks, not predictions |
 
 Player team filters describe historical season membership. The win projection
