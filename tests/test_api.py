@@ -123,6 +123,14 @@ def test_rookie_without_stats_valued_by_draft_slot(client, monkeypatch, no_fair_
     assert data["value_basis"] == "draft_slot" and data["draft_pick"] == 3
 
 
+@pytest.mark.parametrize("values,reason", [({"999": 1}, "no_recent_stats"), ({}, "model_unavailable")])
+def test_missing_value_says_why(client, monkeypatch, no_fair_values, values, reason):
+    no_fair_values.return_value = (2026 if values else None, values)
+    monkeypatch.setattr(catalog, "query", MagicMock(return_value=[contract_row()]))
+    data = client.post("/api/valuation", json={"player_id": 7}).json["data"]
+    assert data["predicted_value"] is None and data["value_missing_reason"] == reason
+
+
 def test_stats_take_priority_over_draft_slot(client, monkeypatch, no_fair_values):
     no_fair_values.return_value = (2026, {"123": 30000000})
     monkeypatch.setattr(catalog, "query", MagicMock(return_value=[contract_row()]))
@@ -145,7 +153,7 @@ def test_valuation_compares_fair_value_and_cap_salary(client, monkeypatch, no_fa
     assert response.json["data"] == {
         "player_id": 7, "salary": 20000000.0, "predicted_value": 25000000.0,
         "surplus": 5000000.0, "contract_type": "standard",
-        "value_basis": "stats", "draft_pick": None,
+        "value_basis": "stats", "draft_pick": None, "value_missing_reason": None,
     }
     assert response.json["meta"]["stats_season_end_year"] == 2026
     assert query.call_args.args[1] == (2026, 7)

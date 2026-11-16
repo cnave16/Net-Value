@@ -50,9 +50,13 @@ def valuation(external_id, cap_salary, contract_type, values, rookie=None):
     if fair is None and rookie is not None:
         fair, basis = rookie["value"], "draft_slot"
     fair = None if fair is None else float(round(Decimal(str(fair))))
+    # Why fair value is missing: the model ran but this player has no stats in
+    # its season (missed it, barely played), or the model has no season at all.
+    missing = None if fair is not None else "no_recent_stats" if values else "model_unavailable"
     return {
         "salary": salary, "predicted_value": fair,
         "surplus": None if salary is None or fair is None else fair - salary,
         "contract_type": contract_type, "value_basis": basis,
         "draft_pick": rookie["pick"] if basis == "draft_slot" else None,
+        "value_missing_reason": missing,
     }

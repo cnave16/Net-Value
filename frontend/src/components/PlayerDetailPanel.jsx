@@ -47,6 +47,7 @@ export default function PlayerDetailPanel({ playerId }) {
   const fairValue = valuation.predicted_value ?? player.predicted_value
   const surplus = valuation.surplus ?? (salary != null && fairValue != null ? fairValue - salary : null)
   const max = Math.max(salary ?? 0, fairValue ?? 0) || 1
+  const noRecentStats = (valuation.value_missing_reason ?? player.value_missing_reason) === 'no_recent_stats'
   const tone = surplus == null ? '' : surplus >= 0 ? 'positive' : 'negative'
   // Newest season first. Its teams are historical, so label them with the season.
   const latest = player.seasons?.[0]
@@ -68,7 +69,7 @@ export default function PlayerDetailPanel({ playerId }) {
         <div className="stat-grid">
           <div className="stat">
             <small>Fair value</small>
-            <strong>{formatMoney(fairValue)}</strong>
+            <strong>{formatMoney(fairValue, noRecentStats ? 'No stats' : 'Unavailable')}</strong>
           </div>
           <div className="stat">
             <small>Salary</small>
@@ -83,7 +84,7 @@ export default function PlayerDetailPanel({ playerId }) {
 
         <div className={`surplus ${tone || 'neutral'}`}>
           <span>{surplus == null ? 'Net value' : surplus >= 0 ? 'Surplus' : 'Deficit'}</span>
-          <strong>{formatSurplus(surplus)}</strong>
+          <strong>{formatSurplus(surplus, noRecentStats ? 'No stats' : 'Unavailable')}</strong>
         </div>
         {surplus != null && (
           <p className="muted">
@@ -111,6 +112,8 @@ function ContractNote({ player, valuation }) {
   else if (valuation.salary == null && player.salary == null) notes.push("2026–27 salary hasn't been listed yet.")
   if (valuation.value_basis === 'draft_slot') {
     notes.push(`Fair value estimated from draft position (No. ${valuation.draft_pick}): no NBA stats from last season.`)
+  } else if ((valuation.value_missing_reason ?? player.value_missing_reason) === 'no_recent_stats') {
+    notes.push('Not in the 2025–26 stats (missed the season or barely played), so the model has nothing recent to value.')
   } else if (valuation.predicted_value == null && player.predicted_value == null) {
     notes.push('No fair value: the model needs last season’s ratings and minutes.')
   }

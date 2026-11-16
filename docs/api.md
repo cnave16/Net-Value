@@ -216,6 +216,9 @@ roster changes.
   pay is not listed), for standard contracts the source has not priced yet,
   and for players without a contract (`contract_type: null`).
 - `surplus` is `predicted_value - salary`, null when either is missing.
+- `value_missing_reason` explains a null `predicted_value`: `no_recent_stats`
+  (the player isn't in the model's stats season: missed it or barely played)
+  or `model_unavailable` (no complete stats season loaded); otherwise null.
 
 A nonexistent player returns 404; a malformed body returns 400.
 
