@@ -2,6 +2,7 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 from project_wins import get_roster_data, project_wins
+from salary_value import estimate_fair_salary
 
 load_dotenv()
 
@@ -176,6 +177,15 @@ def main():
         f"\nProjected 2026-27 wins for the Philadelphia 76ers: "
         f"{results['projected_wins']:.1f}"
     )
+
+    player_id = "1628401"  # Derrick White
+
+    salary = estimate_fair_salary(
+        player_id,
+        season_end_year=2026
+    )
+
+    print(f"Estimated fair salary: ${salary:,.2f}")
 
 
 if __name__ == "__main__":
