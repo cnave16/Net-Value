@@ -161,7 +161,14 @@ database configuration, schema, or data changes.
 See [the trade contract](trades.md) for complete requests, responses, and rule
 coverage. The commissioner dashboard at `GET /trade/teams/<id>?season_id=<id>`
 returns player details, baseline wins/win percentage, and up to 15 targets ranked
-by the gain from adding each player individually.
+by Chase's weighted wins/salary-surplus/LEBRON score for independent additions.
+There is no budget filter; over-cap teams can still receive targets. Existing
+win fields retain the trade simulator's projection basis; `ranking_projected_wins`
+contains Chase's normalized-rotation estimates used in scoring. Added fields
+include `score`, `estimated_fair_salary`, and `salary_surplus` per target, plus
+`ranking_weights`, `budget_filter_applied`, `recommendation_status`,
+`recommendation_reason`, and `ranking_excluded_roster_ids` on the dashboard.
+See the trade contract for missing-data behavior and ranking metadata.
 
 Both trade POST routes require `season_id`, `team_ids`, and `transfers`. Each
 transfer supplies `player_id`, `from_team_id`, and `to_team_id`. The old

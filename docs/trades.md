@@ -25,10 +25,12 @@ The response's `data` contains:
 - `projected_wins` and `projected_win_percentage` for the selected roster.
 - `payroll` and `salary_cap`, using the same comparison objects as trades, with
   identical before/after values because no trade has occurred.
-- `targets`: up to 15 players ranked by the win-percentage gain from adding each
-  player individually, without removing anyone or filtering for trade legality.
+- `targets`: up to 15 independent additions ranked with Chase's weighted score
+  (65% wins, 25% salary surplus, 10% LEBRON impact after component scaling).
+  No outgoing players, salary-budget filter, or trade-legality filter is applied.
 - `eligible_target_count` and `skipped_targets` with IDs and reasons for unusable
-  projection data. Fewer than 15 results are possible.
+  stats, NBA IDs, fair values, or positive actual salaries. Fewer than 15 results
+  are possible. Two-way zero cap hits are not treated as annual salary.
 
 Each target has `player`, `team_id`, `team_ids`, `projected_wins`, and
 `projected_win_percentage`. The projection objects contain `before`, `after`,
@@ -40,9 +42,31 @@ Player details include `player_id`, `name`, `external_id`, `lebron`,
 `offensive_lebron`, `defensive_lebron`, `minutes`, `actual_salary` (2026–27 cap
 salary), `contract_type` (`standard` or `two_way`), and `has_stats`.
 Unavailable optional details are null. Existing roster members are excluded
-from targets. Ties are broken by player ID. Negative or zero gains remain visible
-if they rank in the top 15; this model does not guarantee that adding a player
-improves a roster. Missing target salaries do not prevent win ranking.
+from targets. Chase's tie order is score, ranking wins added, lower actual salary,
+then NBA ID. Negative or zero gains remain visible if they rank in the top 15.
+Recommendations do not establish affordability or trade legality; evaluate the
+actual outgoing/incoming package with the trade simulator.
+
+Each target also has `score`, `estimated_fair_salary`, `salary_surplus`, and
+`ranking_projected_wins` (`before`, `after`, `net_difference`). Chase's score
+uses the top 15 players by capped historical minutes, rescaled to 19,680 team
+minutes. Existing `projected_wins` and percentage fields keep the simulator's
+fixed historical minutes for display consistency. Their order need not follow
+those displayed gains. The two projection bases are explicit in metadata.
+
+Fair values are calculated across the whole selected stats season, including
+players without current contracts, using the API's configured read-only database
+connection. Candidate salaries come directly from `player_contracts.cap_salary`.
+Internal player IDs remain unchanged in API responses; NBA IDs are used only
+inside the model. The optimizer's standalone database/salary discovery is not used.
+
+`budget_filter_applied` is false even when payroll is unknown or the team is over
+the cap. `ranking_weights` exposes Chase's weights. `recommendation_status` is
+`available` or `unavailable`, with `recommendation_reason` when unavailable.
+Insufficient league minutes (below the model's 90% coverage threshold) or missing
+NBA IDs on usable roster members returns an empty target list, never the old
+wins-only ranking. Roster members without usable stats remain in payroll and are
+listed in `ranking_excluded_roster_ids`.
 
 Percentages are **0–100**, calculated as `projected_wins / 82 * 100`.
 Percentage differences are percentage points, not relative percent changes.

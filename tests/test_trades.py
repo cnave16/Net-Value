@@ -38,6 +38,7 @@ def teams():
             "id": team_id, "abbreviation": abbreviation, "name": abbreviation,
             "players": [{
                 "player_id": player_id, "name": f"Player {player_id}",
+                "external_id": str(1000 + player_id),
                 "lebron": Decimal(rating), "minutes": Decimal("100"),
                 "actual_salary": Decimal(salary),
             } for player_id in range(start, start + 12)],
@@ -329,10 +330,15 @@ def candidates(teams):
     return [{**p, "team_ids": [team_id]} for team_id, team in teams.items() for p in team["players"]]
 
 
+def ranking_values(teams):
+    return {"fair": {p["external_id"]: 10_000_000 for t in teams.values() for p in t["players"]},
+            "reason": None}
+
+
 def test_dashboard_top_15_matches_independent_projections(teams, caps):
     pool = candidates(teams)
     original = deepcopy((teams, pool))
-    result = commissioner_dashboard(teams[10], pool[::-1], caps[10])
+    result = commissioner_dashboard(teams[10], pool[::-1], caps[10], ranking_values(teams))
     expected = sorted(
         [(projection(teams[10]["players"] + [p]), p["player_id"]) for p in pool if p["team_ids"] != [10]],
         key=lambda item: (-item[0], item[1]),
@@ -349,7 +355,7 @@ def test_dashboard_skips_bad_candidates_and_reports_short_list(teams, caps):
     pool = candidates(teams)[12:15]
     pool[0]["team_ids"] = [20, 30]
     pool[1]["lebron"] = None
-    result = commissioner_dashboard(teams[10], pool, caps[10])
+    result = commissioner_dashboard(teams[10], pool, caps[10], ranking_values(teams))
     assert len(result["targets"]) == 2
     assert result["targets"][0]["player"]["player_id"] == 13
     assert result["targets"][0]["team_id"] is None
@@ -360,6 +366,7 @@ def test_dashboard_skips_bad_candidates_and_reports_short_list(teams, caps):
 
 
 def test_dashboard_route(client, loaded, teams, monkeypatch):
+    monkeypatch.setattr(trades, "load_recommendation_values", MagicMock(return_value=ranking_values(teams)))
     loader = MagicMock(return_value=candidates(teams))
     monkeypatch.setattr(trades, "load_target_candidates", loader)
     response = client.get("/api/trade/teams/10?season_id=1")
@@ -371,6 +378,8 @@ def test_dashboard_route(client, loaded, teams, monkeypatch):
     assert "without_outgoing" in response.json["meta"]["target_basis"]
     loaded.assert_called_once_with([10], 1)
     loader.assert_called_once_with(1)
+    trades.load_recommendation_values.assert_called_once_with(1)
+    assert response.json["meta"]["target_budget_filter_applied"] is False
 
 
 @pytest.mark.parametrize("suffix", ["", "?season_id=0", "?season_id=abc", "?season_id=2147483648",
@@ -378,3 +387,72 @@ def test_dashboard_route(client, loaded, teams, monkeypatch):
 def test_dashboard_bad_arguments(client, loaded, suffix):
     assert client.get("/api/trade/teams/10" + suffix).status_code == 400
     loaded.assert_not_called()
+
+
+def test_chase_score_can_rank_cheaper_player_above_bigger_win_gain(teams, caps):
+    pool = candidates(teams)[12:14]
+    pool[0].update(lebron=Decimal('4'), actual_salary=Decimal('100000000'))
+    pool[1].update(lebron=Decimal('3'), actual_salary=Decimal('1000000'))
+    values = ranking_values(teams)
+    result = commissioner_dashboard(teams[10], pool, caps[10], values)
+    targets = result['targets']
+    assert [t['player']['player_id'] for t in targets] == [14, 13]
+    assert targets[0]['projected_wins']['net_difference'] < targets[1]['projected_wins']['net_difference']
+    assert targets[0]['score'] > targets[1]['score']
+    assert targets[0]['salary_surplus'] == 9_000_000
+    assert result['ranking_weights'] == {'wins': .65, 'salary_value': .25, 'lebron': .10}
+    for target, player in zip(targets, reversed(pool)):
+        assert target['projected_wins']['after'] == projection(teams[10]['players'] + [player])
+    assert result == commissioner_dashboard(teams[10], pool[::-1], caps[10], values)
+
+
+@pytest.mark.parametrize('roster_salary', [Decimal('30000000'), None])
+def test_over_cap_or_unknown_payroll_does_not_filter_targets(teams, caps, roster_salary):
+    for p in teams[10]['players']:
+        p['actual_salary'] = roster_salary
+    pool = candidates(teams)[12:14]
+    pool[0]['actual_salary'] = Decimal('100000000')
+    result = commissioner_dashboard(teams[10], pool, caps[10], ranking_values(teams))
+    assert {t['player']['player_id'] for t in result['targets']} == {13, 14}
+    assert result['budget_filter_applied'] is False
+    assert result['eligible_target_count'] == 2
+
+
+def test_missing_candidate_data_is_reported_using_internal_ids(teams, caps):
+    pool = candidates(teams)[12:17]
+    pool[0]['external_id'] = None
+    pool[1]['actual_salary'] = None
+    pool[2]['minutes'] = 0
+    pool[3]['actual_salary'] = Decimal('0')  # A two-way cap hit is not annual pay.
+    values = ranking_values(teams)
+    del values['fair'][pool[4]['external_id']]
+    result = commissioner_dashboard(teams[10], pool, caps[10], values)
+    assert result['targets'] == []
+    assert result['skipped_targets'] == [
+        {'player_id': 13, 'reason': 'missing_nba_id'},
+        {'player_id': 14, 'reason': 'missing_positive_actual_salary'},
+        {'player_id': 15, 'reason': 'unusable_projection_data'},
+        {'player_id': 16, 'reason': 'missing_positive_actual_salary'},
+        {'player_id': 17, 'reason': 'missing_fair_value'},
+    ]
+
+
+def test_no_stats_roster_players_stay_in_payroll_but_not_ranking(teams, caps):
+    teams[10]['players'][0].update(has_stats=False, lebron=None, minutes=None, external_id=None)
+    result = commissioner_dashboard(teams[10], candidates(teams), caps[10], ranking_values(teams))
+    assert result['recommendation_status'] == 'available'
+    assert result['ranking_excluded_roster_ids'] == [1]
+    assert len(result['targets']) == 15
+    assert result['payroll']['before'] == '12000001.20'
+
+
+def test_missing_roster_id_or_incomplete_league_never_falls_back(teams, caps):
+    values = {'fair': {}, 'reason': 'insufficient_season_coverage'}
+    result = commissioner_dashboard(teams[10], candidates(teams), caps[10], values)
+    assert result['targets'] == []
+    assert result['recommendation_reason'] == 'insufficient_season_coverage'
+    assert result['projected_wins'] == projection(teams[10]['players'])
+    teams[10]['players'][0]['external_id'] = None
+    result = commissioner_dashboard(teams[10], candidates(teams), caps[10], ranking_values(teams))
+    assert result['targets'] == []
+    assert result['recommendation_reason'] == 'missing_roster_nba_id'
