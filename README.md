@@ -54,7 +54,7 @@ Elias's React app lives in `frontend/`. In a second terminal, with Node.js
 22.12 or newer installed, run `npm ci` and `npm run dev` from that folder.
 It defaults to sample data. Set `VITE_USE_MOCK=false` in `frontend/.env.local`
 and restart Vite to connect to Flask on port 5001 through the `/api` proxy.
-Player search and details are available; draft and trade screens are placeholders.
+Player search, details, and the multi-team trade simulator are available; the draft screen is a placeholder.
 
 Run `npm run lint` and `npm run build` from `frontend/` to check frontend changes.
 
@@ -78,7 +78,7 @@ See [trade analysis](docs/trades.md) for the multi-team request, dashboard
 response, provisional cap estimates, and the legality checker's supported rules.
 Trade and dashboard requests always use 2026–27 cap rules. Their `season_id`
 selects the source data snapshot, so older player ratings can feed the model.
-The old two-team request format is removed; frontend integration is pending.
+The old two-team request format is removed; the `/trade` page uses the multi-team format.
 
 ## Win projections and player data
 

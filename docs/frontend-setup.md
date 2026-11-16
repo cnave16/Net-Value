@@ -1,8 +1,8 @@
 # Frontend setup
 
 Elias can build team and season selection, player search, and roster win
-projections against the current API. Two-team trade analysis is now available
-in the backend; player valuation and draft picks still return 501. See
+projections against the current API. The trade simulator at `/trade` is wired
+to the multi-team trade API; player valuation and draft picks still return 501. See
 [the API contract](api.md) for the exact fields.
 
 ## Start the backend
@@ -63,12 +63,14 @@ part of a production build; hosting will need an API proxy or an explicit API UR
 1. Open `/players` with `VITE_USE_MOCK=false` and confirm real names load.
 2. Search for a player, select the result, and confirm the detail panel loads.
 3. Salary and value should show unavailable, with the valuation-model message.
-4. Open `/draft` and `/trade`; these are still placeholder screens.
+4. Open `/trade`, pick two teams, check a player on each, and analyze. Add a
+   third team to route players between several teams, or use a team's "Top
+   targets" list to pull a player and their team into the trade.
+5. `/draft` is still a placeholder screen.
 
 The current player screen shows the first page of results and has no pagination
-controls yet. Search still queries the full database. Season stats in the sample
-UI are optional; the current player API does not return a `seasons` field, so
-those stats are absent in live mode. Team selection and win-projection screens
+controls yet. Search still queries the full database. Season stats come from the
+`seasons` list on `/players/<id>`. Team selection and win-projection screens
 remain frontend work, even though API helpers are available for them.
 
 ## Integrate win projections next
@@ -90,10 +92,14 @@ the backend, even when the player screens use sample data.
 
 ## Display incomplete features clearly
 
-The trade screen remains a placeholder. When wiring it up, update the existing
-`validateTrade` helper to send team IDs and the selected season as described in
-[the trade contract](trades.md). Show results only when `analysis_available`
-is true, and label legality as incomplete rather than showing a legal-trade badge.
+The trade screen (`frontend/src/pages/TradePage.jsx`) uses `getTradeTeam` and
+`analyzeTrade` against [the trade contract](trades.md). It supports 2–5 teams
+(the API allows 30), keeps the trade in the URL (`?t=<team ids>&m=<player>-<from>-<to>,…`)
+so it can be shared, and shows the API's assumption warnings with each result.
+Pre-analysis Sends/Receives totals are display only; salary matching is always
+the backend's legality check. Legality is labeled "Passes supported CBA rules"
+or "Needs review", never "legal". Players listed on more than one participating
+roster block the trade in the UI, matching the backend's ownership check.
 
 | API behavior | Frontend behavior |
 | --- | --- |

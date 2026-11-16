@@ -70,7 +70,7 @@ export function projectWins(playerIds, seasonId) {
   })
 }
 
-// ---- Analysis (backend currently returns 501 for these) ----
+// ---- Analysis (backend currently returns 501 for valuation and picks) ----
 
 // Fair value vs. salary for one player. While the model isn't integrated
 // (501 NOT_IMPLEMENTED), return nulls flagged `notImplemented` so the UI shows
@@ -89,11 +89,21 @@ export async function getValuation(playerId) {
   }
 }
 
-export function validateTrade({ teamASends, teamBSends }) {
+// ---- Trade simulator (Bronson's backend; see docs/trades.md) ----
+
+// Roster with salaries, baseline projected wins, and top addition targets.
+export function getTradeTeam(teamId, seasonId) {
+  return request({ method: 'get', url: `/trade/teams/${teamId}`, params: { season_id: seasonId } })
+}
+
+// transfers: [{ player_id, from_team_id, to_team_id }]. Every team in teamIds must take part.
+export function analyzeTrade({ seasonId, teamIds, transfers }) {
   return request({
     method: 'post',
-    url: '/trade/validate',
-    data: { team_a_sends: teamASends, team_b_sends: teamBSends },
+    url: '/trade/analyze',
+    data: { season_id: seasonId, team_ids: teamIds, transfers },
+    // Projecting every roster can take longer than a catalog read.
+    timeout: 30000,
   })
 }
 

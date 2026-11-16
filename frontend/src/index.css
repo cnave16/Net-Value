@@ -157,3 +157,94 @@ main { max-width: 1180px; margin: 0 auto; padding: 2rem 1rem; }
 .season-grid strong { font: 700 1.35rem var(--display); font-variant-numeric: tabular-nums; }
 .season-grid .positive { color: var(--positive); }
 .season-grid .negative { color: var(--negative); }
+
+/* ---- Trade simulator ---- */
+.trade-page > .muted { margin-top: -0.75rem; margin-bottom: 1.5rem; }
+.trade-builder { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 1.5rem; align-items: start; }
+.trade-team, .trade-result-team, .trade-legality { background: var(--surface); border: 2px solid var(--ink); padding: 1rem; min-width: 0; }
+@media (prefers-color-scheme: dark) { .trade-team, .trade-result-team, .trade-legality { border-color: var(--line); } }
+.trade-select {
+  width: 100%; padding: 0.6rem 0.75rem; font: 600 1rem 'Barlow', sans-serif;
+  border: 2px solid var(--line); border-radius: 0; background: var(--surface); color: var(--text);
+}
+.trade-select:focus { border-color: var(--accent); outline: none; }
+.trade-team-summary { display: grid; grid-template-columns: 1fr 1fr; margin: 0.9rem 0; border: 1px solid var(--line); }
+.trade-team-summary > div { padding: 0.5rem 0.75rem; }
+.trade-team-summary > div + div { border-left: 1px solid var(--line); }
+.trade-team-summary strong { font: 700 1.6rem var(--display); font-variant-numeric: tabular-nums; }
+.trade-roster { list-style: none; margin: 0; padding: 0; max-height: 440px; overflow-y: auto; }
+.trade-roster label {
+  display: grid; grid-template-columns: auto 1fr auto auto; gap: 0.75rem; align-items: center;
+  padding: 0.5rem 0.4rem; border-bottom: 1px solid var(--line); cursor: pointer;
+}
+.trade-roster label:hover { background: var(--bg); }
+.trade-roster li.checked { background: var(--ink); color: #fff; }
+.trade-roster li.checked label:hover { background: transparent; }
+.trade-roster li.checked .trade-player-meta { color: #a9a7a2; }
+.trade-destination {
+  display: flex; align-items: center; gap: 0.5rem; padding: 0 0.4rem 0.5rem 2.15rem;
+  font: 600 0.8rem var(--display); text-transform: uppercase; letter-spacing: 0.04em; color: #a9a7a2;
+}
+.trade-destination select {
+  padding: 0.2rem 0.4rem; font: 600 0.9rem 'Barlow', sans-serif;
+  border: 1px solid #55534f; border-radius: 0; background: var(--ink); color: #fff;
+}
+.trade-roster input { accent-color: var(--accent); width: 1rem; height: 1rem; }
+.trade-player-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trade-player-meta { font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.trade-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; margin: 1.5rem 0; }
+.trade-button {
+  padding: 0.75rem 1.75rem; border: 0; border-radius: 0; background: var(--accent); color: #fff; cursor: pointer;
+  font: 800 1.2rem var(--display); font-style: italic; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.trade-button:disabled { background: var(--neutral); cursor: not-allowed; }
+.trade-secondary {
+  padding: 0.7rem 1.2rem; border: 2px solid var(--ink); border-radius: 0; background: transparent; color: var(--text);
+  cursor: pointer; font: 700 1rem var(--display); text-transform: uppercase; letter-spacing: 0.04em;
+}
+@media (prefers-color-scheme: dark) { .trade-secondary { border-color: var(--line); } }
+.trade-secondary:hover { border-color: var(--accent); }
+.link-button {
+  padding: 0; border: 0; background: none; color: var(--accent); cursor: pointer;
+  font: 700 0.85rem var(--display); text-transform: uppercase; letter-spacing: 0.04em;
+}
+.link-button:disabled { color: var(--neutral); cursor: not-allowed; }
+.trade-team-header { display: flex; justify-content: space-between; align-items: baseline; }
+
+.trade-ledger { display: grid; grid-template-columns: 1fr 1fr; margin: -0.4rem 0 0.9rem; border: 1px solid var(--line); border-top: 0; }
+.trade-ledger > div { padding: 0.5rem 0.75rem; min-width: 0; }
+.trade-ledger > div + div { border-left: 1px solid var(--line); }
+.trade-ledger strong { display: block; font: 700 1.25rem var(--display); font-variant-numeric: tabular-nums; }
+
+.trade-targets { margin-top: 1.25rem; }
+.trade-targets .fine { margin: 0 0 0.5rem; }
+.trade-targets ol { list-style: none; margin: 0 0 0.5rem; padding: 0; }
+.trade-targets li {
+  display: grid; grid-template-columns: 1fr auto auto auto; gap: 0.75rem; align-items: center;
+  padding: 0.4rem 0.4rem; border-bottom: 1px solid var(--line);
+}
+.trade-target-gain { font: 700 1rem var(--display); font-variant-numeric: tabular-nums; min-width: 3.5rem; text-align: right; }
+.trade-target-gain.positive { color: var(--positive); }
+.trade-target-gain.negative { color: var(--negative); }
+
+.trade-assumptions { background: var(--surface); border: 1px solid var(--line); padding: 0.75rem 1rem; }
+.trade-assumptions summary { cursor: pointer; font: 700 0.9rem var(--display); text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.trade-assumptions ul { margin: 0.5rem 0 0; padding-left: 1.25rem; color: var(--muted); font-size: 0.88rem; }
+
+.trade-results { display: grid; gap: 1.5rem; }
+.trade-result-team h2 { font-size: 2rem; font-weight: 800; font-style: italic; margin: 0 0 0.25rem; }
+.trade-result-team .surplus { margin: 0.75rem 0; }
+.trade-stats { grid-template-columns: 1fr 1fr; }
+.trade-stats .stat:nth-child(3) { border-left: 0; }
+.trade-stats .stat:nth-child(n + 3) { border-top: 1px solid var(--line); }
+.trade-stats .stat strong { font-size: 1.6rem; }
+.trade-checks { list-style: none; margin: 0.75rem 0; padding: 0; }
+.trade-checks li { display: flex; gap: 0.75rem; padding: 0.45rem 0; border-bottom: 1px solid var(--line); }
+.trade-checks li strong { width: 1rem; color: var(--neutral); }
+.trade-checks li.positive strong { color: var(--positive); }
+.trade-checks li.negative strong { color: var(--negative); }
+.salary-missing {
+  display: block; font-size: 0.75rem; color: var(--muted); cursor: help;
+  text-decoration: underline dotted; text-underline-offset: 2px;
+}
