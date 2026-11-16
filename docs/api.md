@@ -98,6 +98,12 @@ An ID of zero or above 2147483647 returns 400. A valid ID with no player returns
 `/teams` returns `id`, `abbreviation`, `team_name`, `city`.
 `/seasons` returns `id`, `start_year`, `end_year`.
 
+By default the list includes only players on a 2026–27 roster (a row in
+`player_contracts`); `roster=all` also returns free agents and other players kept
+for historical stats and the models. Any other `roster` value returns 400, and
+`meta.roster` echoes the filter. `/players/<id>` and `/valuation` work for every
+player either way.
+
 Team filtering means **played for that team in that season**, not current
 roster membership. A traded player can match multiple teams in one season.
 Results do not duplicate players. `team`, `salary`, `predicted_value`, `surplus`,
@@ -201,10 +207,11 @@ roster changes.
 - `predicted_value` is Chase's fair annual salary (`data_model/salary_value.py`):
   the league's cap budget split by LEBRON above replacement times minutes in the
   latest complete stats season, with a minimum salary floor and a 35%-of-cap
-  ceiling (`value_basis: "stats"`). A current rookie without stats gets the
-  expected first-season value of their draft slot instead (`value_basis:
-  "draft_slot"`, `draft_pick`; see [Draft picks](#draft-picks)). Otherwise it is
-  null. Valuations are cached in the API process for 10 minutes.
+  ceiling (`value_basis: "stats"`). A player from the last two draft classes
+  without stats gets their draft slot's expected value for their current career
+  year instead (year 1 for this year's rookies, year 2 for last year's;
+  `value_basis: "draft_slot"`, `draft_pick`; see [Draft picks](#draft-picks)).
+  Otherwise it is null. Valuations are cached in the API process for 10 minutes.
 - `salary` is the 2026–27 cap salary. It is null for two-way contracts (their
   pay is not listed), for standard contracts the source has not priced yet,
   and for players without a contract (`contract_type: null`).

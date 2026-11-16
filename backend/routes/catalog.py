@@ -58,6 +58,11 @@ def players():
     if team and season_id is None:
         # Membership is historical, so a team filter needs a specific season.
         raise BadRequest("season_id is required when filtering by team.")
+    # By default list only players on a current (2026-27) roster. roster=all also
+    # returns free agents and others kept for historical stats and the models.
+    roster = request.args.get("roster", "current")
+    if roster not in ("current", "all"):
+        raise BadRequest("roster must be 'current' or 'all'.")
 
     # Keep SQL conditions separate from the values supplied by the user.
     conditions, params = [], []
@@ -80,7 +85,13 @@ def players():
             "LEFT JOIN player_team_seasons pts ON pts.player_season_id = ps.player_season_id "
             "LEFT JOIN teams t ON t.team_id = pts.team_id WHERE " + season_filter + ")"
         )
-    where = " WHERE " + " AND ".join(conditions) if conditions else ""
+    if roster == "current":
+        conditions.append(
+            "EXISTS (SELECT 1 FROM player_contracts rc "
+            "WHERE rc.player_id = p.player_id AND rc.season_start_year = %s)"
+        )
+        params.append(TRADE_SEASON_START_YEAR)
+    where =" WHERE " + " AND ".join(conditions) if conditions else ""
     # filtered holds all matches; paged selects only the requested slice.
     # One query keeps the total and results consistent during data imports.
     # The final LEFT JOIN keeps the total even when that page has no players.
@@ -104,7 +115,7 @@ def players():
         "page": page, "limit": limit, "total": total,
         # Round up so a partly filled last page still counts as a page.
         "total_pages": (total + limit - 1) // limit,
-        "season_id": season_id, "team_filter": team or None,
+        "season_id": season_id, "team_filter": team or None, "roster": roster,
     })
 
 

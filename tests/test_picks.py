@@ -86,3 +86,23 @@ def test_pick_values_compare_value_and_salary_over_the_same_seasons():
     assert first["typical_surplus_per_season"] == first["surplus_per_season"]
     assert second["contract_seasons"] == 2 and second["salary_per_season"] == 4_500_000
     assert values[2]["salary_is_estimate"] and not first["salary_is_estimate"]
+
+
+def test_recent_draftees_estimated_by_current_career_year(monkeypatch):
+    from backend.services import draft
+    from backend import create_app
+    rows = [
+        {"draft_year": y, "pick": p, "player_id": pid, "player_name": f"P{pid}", "external_id": None,
+         "cap_salary": 5_000_000 if y == 2026 else None, "later_salaries": [5e6, 5e6, 5e6],
+         "contract_type": "standard" if y == 2026 else None}
+        for y, p, pid in [(2021, 1, 1), (2024, 1, 2), (2025, 1, 3), (2025, 2, 4), (2026, 1, 5), (2026, 2, 6)]
+    ]
+    monkeypatch.setattr(draft, "fair_values", lambda: (2026, {}))
+    monkeypatch.setattr(draft, "query", lambda *args: rows)
+    with create_app({"TESTING": True, "DATABASE_URL": None}).app_context():
+        model = draft.build_model()
+    table = dv.expected_values([(r["pick"], 2026 - r["draft_year"], None) for r in rows if r["draft_year"] < 2026])
+    # 2026 class: career year 1; 2025 class: career year 2; older classes: none.
+    assert set(model["rookies"]) == {3, 4, 5, 6}
+    assert model["rookies"][5]["value"] == table[(1, 1)]
+    assert model["rookies"][3]["value"] == table[(1, 2)]

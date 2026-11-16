@@ -72,7 +72,7 @@ export default function PlayerDetailPanel({ playerId }) {
           </div>
           <div className="stat">
             <small>Salary</small>
-            <strong>{formatMoney(salary)}</strong>
+            <strong>{(valuation.contract_type ?? player.contract_type) === 'two_way' ? 'Two-way' : formatMoney(salary)}</strong>
           </div>
         </div>
 
@@ -110,7 +110,7 @@ function ContractNote({ player, valuation }) {
   else if (type == null) notes.push('No 2026–27 NBA contract on file.')
   else if (valuation.salary == null && player.salary == null) notes.push("2026–27 salary hasn't been listed yet.")
   if (valuation.value_basis === 'draft_slot') {
-    notes.push(`Fair value estimated from draft position (No. ${valuation.draft_pick}): no NBA stats yet.`)
+    notes.push(`Fair value estimated from draft position (No. ${valuation.draft_pick}): no NBA stats from last season.`)
   } else if (valuation.predicted_value == null && player.predicted_value == null) {
     notes.push('No fair value: the model needs last season’s ratings and minutes.')
   }

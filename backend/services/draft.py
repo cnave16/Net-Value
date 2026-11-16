@@ -17,6 +17,9 @@ from .valuation import fair_values
 
 CACHE_SECONDS = 600
 HISTORY_CLASSES = 5
+# Draft classes eligible for a draft-slot estimate when they have no stats-based
+# value: this year's rookies and last year's (second-year players).
+ESTIMATED_CLASSES = 2
 _cache = {}
 
 
@@ -77,14 +80,27 @@ def build_model():
         "sample_size": len(observations),
         "rookie_class": TRADE_SEASON_START_YEAR,
         "picks": picks,
-        # First-season expected value for each current rookie, by player_id.
-        "rookies": {r["player_id"]: {"pick": r["pick"], "value": table[(r["pick"], 1)]}
-                    for r in rookies if r["player_id"] is not None},
+        # Expected value in the trade season for recent draftees, by player_id:
+        # career year 1 for this year's class, 2 for last year's.
+        "rookies": {
+            r["player_id"]: {"pick": r["pick"], "value": table[(r["pick"], career_year(r["draft_year"]))]}
+            for r in rows
+            if r["player_id"] is not None
+            and r["draft_year"] > TRADE_SEASON_START_YEAR - ESTIMATED_CLASSES
+        },
         "assumptions": ASSUMPTIONS,
     }
 
 
+def career_year(draft_year):
+    """Career year during the trade season: 1 for a player drafted that summer."""
+    return TRADE_SEASON_START_YEAR - draft_year + 1
+
+
 def rookie_estimates():
-    """{player_id: {"pick", "value"}} for the current rookie class; empty without data."""
+    """{player_id: {"pick", "value"}} for recent draftees; empty without data.
+
+    Used only when a player has no stats-based fair value.
+    """
     model = draft_model()
     return model["rookies"] if model else {}

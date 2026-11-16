@@ -38,6 +38,7 @@ def test_health_does_not_require_database(client):
 
 
 @pytest.mark.parametrize("url", [
+    "/api/players?roster=retired",
     "/api/players?page=0", "/api/players?page=abc", "/api/players?limit=101",
     "/api/players?team=BOS", "/api/players?season_id=-1",
     "/api/players?team=INVALID&season_id=1",
@@ -60,7 +61,8 @@ def test_search_is_bound_and_missing_values_are_null(client, monkeypatch):
     assert response.status_code == 200
     sql, params = query.call_args.args
     assert "O'Neal" not in sql
-    assert params == ("%O'Neal\\%\\_%", 2, "BOS", 2026, 20, 0)
+    # Roster filter (2026), contract join (2026), then paging.
+    assert params == ("%O'Neal\\%\\_%", 2, "BOS", 2026, 2026, 20, 0)
     assert response.json["data"][0]["salary"] is None
     assert response.json["data"][0]["team"] is None
     assert response.json["meta"]["total"] == 1
@@ -260,3 +262,15 @@ def test_player_detail_season_failure_uses_database_error(client, monkeypatch):
     response = client.get("/api/players/7")
     assert response.status_code == 503
     assert response.json["error"]["code"] == "DATABASE_UNAVAILABLE"
+
+
+@pytest.mark.parametrize("query_string,filtered", [({}, True), ({"roster": "current"}, True), ({"roster": "all"}, False)])
+def test_player_list_hides_players_without_a_current_contract(client, monkeypatch, query_string, filtered):
+    query = MagicMock(return_value=[{"id": None, "total": 0}])
+    monkeypatch.setattr(catalog, "query", query)
+    response = client.get("/api/players", query_string=query_string)
+    assert response.status_code == 200
+    sql, params = query.call_args.args
+    assert ("FROM player_contracts rc" in sql) is filtered
+    assert params == ((2026, 2026, 20, 0) if filtered else (2026, 20, 0))
+    assert response.json["meta"]["roster"] == query_string.get("roster", "current")

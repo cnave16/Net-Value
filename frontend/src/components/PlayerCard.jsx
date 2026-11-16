@@ -3,6 +3,7 @@ import { formatMoney, formatSurplus } from '../services/format.js'
 
 export default function PlayerCard({ player, selected, onSelect }) {
   const { name, team, salary, surplus } = player
+  const twoWay = player.contract_type === 'two_way'
   const tone = surplus == null ? 'neutral' : surplus >= 0 ? 'positive' : 'negative'
   return (
     <button
@@ -16,11 +17,11 @@ export default function PlayerCard({ player, selected, onSelect }) {
       <span className="player-stats">
         <span>
           <small>Salary</small>
-          {formatMoney(salary, 'N/A')}
+          {twoWay ? 'Two-way' : formatMoney(salary, 'N/A')}
         </span>
         <span className={`player-surplus ${tone}`}>
           <small>Net</small>
-          {formatSurplus(surplus, 'N/A')}
+          {twoWay ? '—' : formatSurplus(surplus, 'N/A')}
         </span>
       </span>
       <PlayerHeadshot player={player} className="card-headshot" />
