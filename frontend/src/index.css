@@ -244,3 +244,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 2rem 1rem; }
 .trade-checks li strong { width: 1rem; color: var(--neutral); }
 .trade-checks li.positive strong { color: var(--positive); }
 .trade-checks li.negative strong { color: var(--negative); }
+.salary-missing {
+  display: block; font-size: 0.75rem; color: var(--muted); cursor: help;
+  text-decoration: underline dotted; text-underline-offset: 2px;
+}

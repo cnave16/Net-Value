@@ -24,14 +24,29 @@ function tone(value) {
 // Money arrives as decimal strings; null means unavailable, never zero.
 const dollars = (value) => (value == null ? null : Number(value))
 
-// Sum salaries, or null if any is missing: a partial total would understate payroll.
-function salaryTotal(players) {
+// Sum the salaries on file and list who has none. The backend returns null for an
+// incomplete total; the UI shows the known part as a lower bound ("$148M+") instead.
+function salarySummary(players) {
   let total = 0
+  const missing = []
   for (const p of players) {
-    if (p.actual_salary == null) return null
-    total += Number(p.actual_salary)
+    if (p.actual_salary == null) missing.push(p.name)
+    else total += Number(p.actual_salary)
   }
-  return total
+  return { total, known: players.length - missing.length, missing }
+}
+
+function SalaryAmount({ players }) {
+  const { total, known, missing } = salarySummary(players)
+  if (missing.length === 0) return <strong>{formatMoney(total)}</strong>
+  return (
+    <>
+      <strong>{known > 0 ? `${formatMoney(total)}+` : 'Unknown'}</strong>
+      <span className="salary-missing" title={missing.join(', ')}>
+        {missing.length} without salary
+      </span>
+    </>
+  )
 }
 
 let slotKey = 0
@@ -102,19 +117,19 @@ function TeamColumn({
         <>
           <div className="trade-team-summary">
             <div><small>Projected wins</small><strong>{team.projected_wins.toFixed(1)}</strong></div>
-            <div><small>Payroll</small><strong>{formatMoney(dollars(team.payroll.before), 'Incomplete')}</strong></div>
+            <div><small>Payroll</small><SalaryAmount players={team.roster} /></div>
           </div>
 
           {(outgoing.length > 0 || incoming.length > 0) && (
             <div className="trade-ledger">
               <div>
                 <small>Sends</small>
-                <strong>{formatMoney(salaryTotal(outgoing), 'Incomplete')}</strong>
+                {outgoing.length > 0 ? <SalaryAmount players={outgoing} /> : <strong>$0</strong>}
                 <span className="fine muted">{outgoing.map((p) => p.name).join(', ') || 'Nothing'}</span>
               </div>
               <div>
                 <small>Receives</small>
-                <strong>{formatMoney(salaryTotal(incoming), 'Incomplete')}</strong>
+                {incoming.length > 0 ? <SalaryAmount players={incoming} /> : <strong>$0</strong>}
                 <span className="fine muted">{incoming.map((p) => p.name).join(', ') || 'Nothing'}</span>
               </div>
             </div>
@@ -196,11 +211,13 @@ function TeamColumn({
   )
 }
 
-function TeamResult({ team, names }) {
+function TeamResult({ team, players }) {
   const wins = team.projected_wins
   const payroll = team.payroll
   const cap = team.salary_cap
-  const list = (ids) => ids.map((id) => names[id] ?? `#${id}`).join(', ') || 'Nothing'
+  const list = (ids) => ids.map((id) => players[id]?.player.name ?? `#${id}`).join(', ') || 'Nothing'
+  // Rebuild the post-trade roster from loaded rosters so a partial payroll can be shown.
+  const rosterAfter = team.roster_after.map((id) => players[id]?.player ?? { name: `#${id}`, actual_salary: null })
   return (
     <div className="trade-result-team">
       <h2>{team.abbreviation}</h2>
@@ -212,11 +229,19 @@ function TeamResult({ team, names }) {
       <div className="stat-grid trade-stats">
         <div className="stat"><small>Wins before</small><strong>{wins.before.toFixed(1)}</strong></div>
         <div className="stat"><small>Wins after</small><strong>{wins.after.toFixed(1)}</strong></div>
-        <div className="stat"><small>Payroll after</small><strong>{formatMoney(dollars(payroll.after), '—')}</strong></div>
+        <div className="stat">
+          <small>Payroll after</small>
+          {payroll.after != null
+            ? <strong>{formatMoney(dollars(payroll.after))}</strong>
+            : <SalaryAmount players={rosterAfter} />}
+        </div>
         <div className="stat"><small>Cap space after</small><strong>{formatMoney(dollars(cap.after), '—')}</strong></div>
       </div>
       {payroll.after == null && (
-        <p className="fine muted">Payroll is incomplete: some players have no salary on file.</p>
+        <p className="fine muted">
+          Payroll counts only players with a salary on file, so it's a minimum. Cap space and
+          salary matching need every salary.
+        </p>
       )}
     </div>
   )
@@ -341,7 +366,6 @@ export default function TradePage() {
     && uninvolved.length === 0 && shared.length === 0 && result.status !== 'loading'
 
   const abbreviations = Object.fromEntries(teams.map((t) => [t.id, t.abbreviation]))
-  const names = Object.fromEntries(Object.entries(players).map(([id, { player }]) => [id, player.name]))
 
   function changed(nextMoves) {
     setMoves(nextMoves)
@@ -524,7 +548,7 @@ export default function TradePage() {
           )}
           {result.data.teams.length > 0 && (
             <div className="trade-builder">
-              {result.data.teams.map((team) => <TeamResult key={team.team_id} team={team} names={names} />)}
+              {result.data.teams.map((team) => <TeamResult key={team.team_id} team={team} players={players} />)}
             </div>
           )}
           <Legality legality={result.data.legality} abbreviations={abbreviations} />
