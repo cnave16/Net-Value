@@ -67,12 +67,13 @@ Run `npm run lint` and `npm run build` from `frontend/` to check frontend change
 - Roster checks, salary matching, and first/second-apron checks with explicit coverage gaps.
 - Consistent JSON responses, input validation, and database error handling.
 
-Player valuation and draft pick endpoints are placeholders that return HTTP
-501. Trade salaries provisionally use `player_seasons.contract_value` as annual
-USD salary. Missing values stay null. Current roster ownership, full cap
-accounting, and contract/date restrictions still need integration; historical
-membership must not be treated as a current roster. Catalog player salary and
-value fields remain unpopulated.
+- Player valuation: Chase's fair-salary model against each player's 2026–27 cap salary.
+
+Rosters and salaries come from 2026–27 contracts loaded by
+`database_config/load_contracts.py` (see [trade analysis](docs/trades.md)).
+Rerun it to refresh them. The draft pick endpoint is a placeholder that returns
+HTTP 501. Cap holds, exceptions, and contract/date restrictions still need
+integration.
 
 See [trade analysis](docs/trades.md) for the multi-team request, dashboard
 response, provisional cap estimates, and the legality checker's supported rules.
@@ -123,12 +124,13 @@ backend/
   responses.py         Shared JSON response format
   routes/
     health.py          App and database health checks
-    catalog.py         Players, teams, seasons
-    pending.py         Reserved valuation and pick routes
+    catalog.py         Players, teams, seasons, and player valuation
+    pending.py         Reserved draft pick route
     projections.py     Roster win estimates using Chase's calculation
     trades.py          Multi-team trades and commissioner dashboard API
   services/
-    trade_data.py      Historical rosters, candidates, and contract salary mapping
+    trade_data.py      Current contract rosters, candidates, and dead money
+    valuation.py       Fair value (Chase's model) next to current cap salary
     trades.py          Multi-team transfers, win comparisons, and target ranking
     trade_finances.py  Exact payroll arithmetic and verified season cap settings
     trade_legality.py  Roster, salary-matching, and apron checks

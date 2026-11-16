@@ -144,8 +144,12 @@ function TeamColumn({
                   <label>
                     <input type="checkbox" checked={checked} onChange={() => onToggle(player.player_id)} />
                     <span className="trade-player-name">{player.name}</span>
-                    <span className="trade-player-meta">{Math.round(player.minutes ?? 0)} min</span>
-                    <span className="trade-player-meta">{formatMoney(dollars(player.actual_salary), 'No salary')}</span>
+                    <span className="trade-player-meta" title={player.has_stats === false ? 'No ratings or minutes last season, so not part of the win projection.' : undefined}>
+                      {player.has_stats === false ? 'No stats' : `${Math.round(player.minutes ?? 0)} min`}
+                    </span>
+                    <span className="trade-player-meta">
+                      {player.contract_type === 'two_way' ? 'Two-way' : formatMoney(dollars(player.actual_salary), 'Not listed')}
+                    </span>
                   </label>
                   {checked && destinations.length > 0 && (destinations.length > 1 || move.to == null) && (
                     <div className="trade-destination">
@@ -174,7 +178,7 @@ function TeamColumn({
                   const owner = target.team_id
                   const alreadyMoving = moves[id]?.to === teamId
                   const reason = owner == null
-                    ? 'Played for several teams last season, so the current owner is unclear.'
+                    ? 'No current team on file.'
                     : !canRequest(owner)
                       ? `Trade is limited to ${MAX_TEAMS} teams.`
                       : null
@@ -496,8 +500,8 @@ export default function TradePage() {
     <section className="page trade-page">
       <h1>Trade Simulator</h1>
       <p className="muted">
-        Pick up to {MAX_TEAMS} teams and check the players each one sends. Projections use{' '}
-        {season ? formatSeason(season) : '…'} ratings and minutes; salary rules use the 2026–27 cap.
+        Pick up to {MAX_TEAMS} teams and check the players each one sends. Rosters and salaries are
+        2026–27 contracts; projections use {season ? formatSeason(season) : '…'} ratings and minutes.
       </p>
       {loadError && <p className="error">{loadError.message}</p>}
 
@@ -547,7 +551,7 @@ export default function TradePage() {
       {shared.length > 0 && (
         <p className="error">
           {shared.map(({ player, teams: [a, b] }) => `${player.name} (${abbreviations[a]} and ${abbreviations[b]})`).join(', ')}{' '}
-          played for more than one of these teams last season, so the simulator can't split these rosters yet.
+          {' '}appear on more than one of these rosters, so the simulator can't split them.
           Pick a different team.
         </p>
       )}

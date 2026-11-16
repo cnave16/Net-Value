@@ -15,6 +15,9 @@ def projection(roster):
     values, invalid = [], []
     # Tied minutes must produce the same result regardless of transfer order.
     for player in sorted(roster, key=lambda p: p["player_id"]):
+        # Rookies and players who missed the data season have no inputs to use.
+        if player.get("has_stats") is False:
+            continue
         try:
             lebron, minutes = float(player["lebron"]), float(player["minutes"])
         except (TypeError, ValueError, OverflowError):
@@ -65,6 +68,8 @@ def player_details(player):
         "lebron": number("lebron"), "offensive_lebron": number("offensive_lebron"),
         "defensive_lebron": number("defensive_lebron"), "minutes": number("minutes"),
         "actual_salary": dollar(money(player.get("actual_salary"))),
+        "contract_type": player.get("contract_type"),
+        "has_stats": player.get("has_stats", True),
     }
 
 

@@ -56,17 +56,18 @@ def simulation_meta(season_id):
         "trade_season": {
             "start_year": TRADE_SEASON_START_YEAR, "end_year": TRADE_SEASON_START_YEAR + 1,
         },
-        "roster_source": "historical_season_membership",
-        "salary_source": "player_seasons.contract_value_assumed_annual_usd",
+        "roster_source": "player_contracts_current_season",
+        "salary_source": "player_contracts.cap_salary",
         "minutes_basis": "full_season_all_teams_fixed_before_and_after",
         "projection_games": 82,
         "win_percentage_scale": "0_to_100",
         "warnings": [
-            "Historical membership is not proof of current team ownership.",
-            "Minutes stay fixed; this does not predict a new rotation.",
-            "contract_value is provisionally treated as annual USD salary.",
-            "Roster and contract data from the selected source season are not confirmed for 2026-27.",
-            "Cap figures exclude untracked holds, dead money, bonuses, and other charges.",
+            "Rosters and cap salaries come from Basketball-Reference contract pages and are as "
+            "current as the last database_config/load_contracts.py run.",
+            "Players without ratings and minutes in the selected data season count toward payroll "
+            "but not win projections.",
+            "Minutes stay fixed at the data season's totals; this does not predict a new rotation.",
+            "Cap figures include the source's dead money but not cap holds, exceptions, or bonuses.",
             "Passing supported checks does not establish full NBA trade legality.",
         ],
     }
@@ -77,7 +78,7 @@ def simulation_meta(season_id):
 def trade_analysis():
     team_ids, season_id, transfers = parse_trade(request.get_json())
     teams = load_trade_rosters(team_ids, season_id)
-    cap_context = load_cap_context(team_ids)
+    cap_context = load_cap_context(team_ids, teams)
     return success(analyze_trade(teams, team_ids, transfers, cap_context), simulation_meta(season_id))
 
 
@@ -91,7 +92,7 @@ def team_dashboard(team_id):
     season_id = integer_argument("season_id", maximum=2147483647)
     teams = load_trade_rosters([team_id], season_id)
     candidates = load_target_candidates(season_id)
-    context = load_cap_context([team_id])
+    context = load_cap_context([team_id], teams)
     meta = simulation_meta(season_id)
     meta["target_basis"] = "single_player_addition_without_outgoing_players_or_legality_filter"
     return success(commissioner_dashboard(teams[team_id], candidates, context.get(team_id, {})), meta)

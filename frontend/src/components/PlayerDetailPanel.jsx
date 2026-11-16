@@ -50,8 +50,8 @@ export default function PlayerDetailPanel({ playerId }) {
   const tone = surplus == null ? '' : surplus >= 0 ? 'positive' : 'negative'
   // Newest season first. Its teams are historical, so label them with the season.
   const latest = player.seasons?.[0]
-  const teamLabel = player.team
-    ?? (latest?.teams?.length ? `${latest.teams.join(' / ')} · ${formatSeason(latest)}` : 'Team unavailable')
+  const teamLabel = player.team ? `${player.team} · 2026–27`
+    : (latest?.teams?.length ? `${latest.teams.join(' / ')} · ${formatSeason(latest)}` : 'Team unavailable')
 
   return (
     <aside className="detail-panel">
@@ -96,9 +96,23 @@ export default function PlayerDetailPanel({ playerId }) {
         {notImplemented && (
           <p className="muted">The valuation model isn't connected to the backend yet.</p>
         )}
+        {!notImplemented && !isMock && <ContractNote player={player} valuation={valuation} />}
       </div>
     </aside>
   )
+}
+
+// Explain a missing salary or fair value instead of leaving a bare "Unavailable".
+function ContractNote({ player, valuation }) {
+  const type = valuation.contract_type ?? player.contract_type
+  const notes = []
+  if (type === 'two_way') notes.push("Two-way contract: it doesn't count against the cap, and its pay isn't listed.")
+  else if (type == null) notes.push('No 2026–27 NBA contract on file.')
+  else if (valuation.salary == null && player.salary == null) notes.push("2026–27 salary hasn't been listed yet.")
+  if (valuation.predicted_value == null && player.predicted_value == null) {
+    notes.push('No fair value: the model needs last season’s ratings and minutes.')
+  }
+  return notes.length ? <p className="muted fine">{notes.join(' ')}</p> : null
 }
 
 function SeasonStats({ season }) {

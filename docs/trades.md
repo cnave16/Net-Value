@@ -14,8 +14,8 @@ GET /api/trade/teams/10?season_id=1
 ```
 
 Use internal database IDs, not NBA external IDs. `season_id` is required and
-selects the source data snapshot (ratings, minutes, and the provisional roster
-and salary records). It does not select the trade season or cap rules. Existing
+selects the source data snapshot for ratings and minutes. Rosters and salaries
+always come from 2026–27 contracts. It does not select the trade season or cap rules. Existing
 requests with `season_id: 1` continue to work using 2026–27 limits. Responses
 identify both `meta.data_season_id` and `meta.trade_season` (2026–2027);
 `meta.season_id` remains an alias for the source data ID.
@@ -32,13 +32,13 @@ The response's `data` contains:
 
 Each target has `player`, `team_id`, `team_ids`, `projected_wins`, and
 `projected_win_percentage`. The projection objects contain `before`, `after`,
-and `net_difference`. A target's `team_ids` describes historical membership;
-`team_id` is null when that membership does not identify exactly one team.
-Such players can still be ranked as hypothetical additions. Do not guess their
-current owner when constructing a trade.
+and `net_difference`. Targets are players under a 2026–27 contract with stats
+in the selected data season; `team_id` is their contract team and `team_ids`
+is `[team_id]`. Free agents are not targets.
 
 Player details include `player_id`, `name`, `external_id`, `lebron`,
-`offensive_lebron`, `defensive_lebron`, `minutes`, and `actual_salary`.
+`offensive_lebron`, `defensive_lebron`, `minutes`, `actual_salary` (2026–27 cap
+salary), `contract_type` (`standard` or `two_way`), and `has_stats`.
 Unavailable optional details are null. Existing roster members are excluded
 from targets. Ties are broken by player ID. Negative or zero gains remain visible
 if they rank in the top 15; this model does not guarantee that adding a player
@@ -89,7 +89,7 @@ For example, the financial fields can look like this:
 {
   "payroll": {
     "currency": "USD",
-    "basis": "contract_value_assumed_annual_usd",
+    "basis": "player_contracts_cap_salary",
     "before": "150000000.00",
     "after": "155000000.00",
     "net_difference": "5000000.00",
@@ -105,7 +105,7 @@ For example, the financial fields can look like this:
     "first_apron": "209015000.00",
     "second_apron": "221686000.00",
     "other_cap_charges": "0.00",
-    "other_cap_charges_confirmed": false,
+    "other_cap_charges_confirmed": true,
     "before": "14961000.00",
     "after": "9961000.00",
     "net_difference": "-5000000.00"
@@ -119,46 +119,47 @@ It does not automatically make a trade illegal. Differences always mean after
 minus before. Dollar values are decimal strings with two places. Incomplete
 totals are null, never partial sums or zero.
 
-## Salary and roster assumptions
+## Rosters and salaries
 
-For this increment, `player_seasons.contract_value` is provisionally treated as
-annual USD salary, as requested. Actual contract salary follows the player;
-estimated market values are never substituted for salary matching. The mapping
-is isolated in `backend/services/trade_data.py` for later replacement.
-`to_jsonb(ps)->>'contract_value'` also supports older databases without that
-column: salary is null instead of a query failure. No schema migration is needed.
+Rosters and cap salaries come from the `player_contracts` and `team_cap_sheets`
+tables, loaded by `database_config/load_contracts.py` from Basketball-Reference's
+team contract pages. Each page lists the players under contract and their
+salary for 2026–27, so every player belongs to exactly one team. Rerun the
+loader to refresh (it replaces the season's rows in one transaction):
+
+```sh
+python database_config/load_contracts.py --dry-run   # parse and match only
+python database_config/load_contracts.py
+```
+
+- **Matching.** Contract players are matched to `players` by normalized name
+  (case, accents, punctuation, and Jr./II/III ignored); the load stops if a name
+  matches more than one player. Unmatched players, mostly rookies, get a new
+  `players` row without an NBA external ID.
+- **Two-way contracts** count as zero against the cap (`cap_salary = 0`,
+  `contract_type = 'two_way'`). A blank salary is treated as two-way only when
+  the source's payroll note says so.
+- **Unknown salaries.** A standard contract the source has not priced yet has a
+  null `cap_salary`, so that team's payroll total is null rather than understated.
+- **Dead money.** `other_cap_charges` is the source's team payroll total minus
+  the listed players' salaries (waived players and similar charges), and
+  `other_cap_charges_confirmed` is true. Cap holds, exceptions, incentives, and
+  distinct apron salary calculations are not included.
+- **Players without stats.** Ratings and minutes still come from the selected
+  data season. Players with no rating or minutes there (`has_stats: false`)
+  count toward payroll but are left out of win projections; the model does not
+  invent a rating for them.
 
 The cap adapter always uses `TRADE_SEASON_START_YEAR = 2026`, independently of
-which database season supplies the model inputs. No 2026–27 database season row
-is required just to apply these limits, and existing season records are not
-relabelled. The API does not accept a trade-season override.
-
-The user-supplied settings are a $164,961,000 cap, $148,465,000 minimum team
-salary, $209,015,000 first apron, and $221,686,000 second apron. The response
-exposes `salary_cap.minimum_team_salary` as information; minimum-payroll
-compliance is not implemented as a trade restriction.
-
-Historical ratings can be inputs to the upcoming-season estimate, but this
-does not turn historical roster or salary records into confirmed 2026–27 data.
-Those adapters still need authoritative upcoming-season membership and salaries.
-
-Cap space and matching currently use roster salaries with zero additional
-charges. This is an explicit **roster-only estimate**: cap holds, dead money,
-incentives, and other cap/apron adjustments are not in the database adapter.
-The adapter can later supply `other_cap_charges`; a complete implementation also
-needs distinct cap and apron salary calculations.
-
-Rosters still use historical season membership, not an authoritative current
-roster feed. The new model helper on main also reads historical membership and
-cannot resolve current ownership. A player shared by participating rosters
-blocks the simulation instead of being counted twice. Replacing the roster
-adapter requires replacing candidate ownership and source metadata too.
+which database season supplies the model inputs. The user-supplied settings are
+a $164,961,000 cap, $148,465,000 minimum team salary, $209,015,000 first apron,
+and $221,686,000 second apron. `salary_cap.minimum_team_salary` is information;
+minimum-payroll compliance is not a trade restriction.
 
 The model uses fixed full-season minutes across all team stints and Chase's
 unchanged win calculation. It does not predict a new rotation. Tied minutes
 are consistently ordered by player ID. Every before/after roster must have
-finite ratings, nonnegative minutes, and positive total minutes. Historical
-rosters can exceed 15 players; their counts cannot prove NBA roster legality.
+positive total minutes among players with stats.
 
 ## Legality function
 
@@ -206,11 +207,9 @@ Run `venv/bin/python -m pytest -q` (or your activated environment's Python).
 Tests cover cycles, multiple destinations, conservation, ordering, target ranking,
 missing data, matching boundaries, apron crossings, and API validation.
 
-An October 16, 2026 read-only check of the configured database returned a
-21-player historical roster and 15 targets for season 1 (2025–26). Four roster
-players had missing contract values, so payroll/cap totals correctly stayed
-null. This confirms the query integration, not current roster accuracy.
+A November 16, 2026 load stored 526 contracts for all 30 teams (88 two-way;
+142 new player rows). 24 teams had every salary listed; six standard contracts
+had no salary on the source yet, so those teams' payroll totals are null.
 
-Before presenting results as current NBA legality, connect authoritative dated
-rosters, fill salary gaps, confirm annual contract units, and add the contract,
+Before presenting results as current NBA legality, add the contract,
 exception, cap-accounting, roster, and date inputs listed in `not_checked`.

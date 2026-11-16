@@ -90,7 +90,7 @@ def test_three_team_cycle(client, payload, teams, caps, loaded, path):
     assert sum(Decimal(t["payroll"]["net_difference"]) for t in data["teams"]) == 0
     assert data["legality"]["passes_supported_rules"] is True
     assert data["legality"]["is_legal"] is None
-    assert response.json["meta"]["salary_source"] == "player_seasons.contract_value_assumed_annual_usd"
+    assert response.json["meta"]["salary_source"] == "player_contracts.cap_salary"
     assert teams == original
     loaded.assert_called_once_with([10, 20, 30], 1)
 
@@ -250,16 +250,42 @@ def test_database_failure_sanitized(client, payload, monkeypatch):
     assert "secret" not in response.get_data(as_text=True)
 
 
-def test_loader_binds_ids_and_maps_contract_value(monkeypatch):
+def test_loader_reads_current_contracts(monkeypatch):
     rows = [{"team_id": i, "abbreviation": "AAA", "team_name": "Team", "matched_season_id": 1,
-             "player_id": i, "name": "Player", "lebron": 1, "minutes": 100, "actual_salary": "999"}
+             "source_total_salary": Decimal("1500"), "player_id": i, "name": "Player",
+             "lebron": 1, "minutes": 100, "actual_salary": Decimal("999"), "contract_type": "standard"}
             for i in (10, 20, 30)]
+    rows.append({**rows[0], "player_id": 99, "lebron": None, "minutes": None,
+                 "actual_salary": Decimal("0"), "contract_type": "two_way"})
     query = MagicMock(return_value=rows)
     monkeypatch.setattr(trade_data, "query", query)
     result = trade_data.load_trade_rosters([10, 20, 30], 1)
-    assert query.call_args.args[1] == (1, 1, [10, 20, 30])
-    assert "to_jsonb(ps)->>'contract_value'" in query.call_args.args[0]
-    assert result[10]["players"][0]["actual_salary"] == "999"
+    assert query.call_args.args[1] == (1, 1, 2026, 2026, [10, 20, 30])
+    assert "player_contracts" in query.call_args.args[0]
+    first, rookie = result[10]["players"]
+    assert first["actual_salary"] == Decimal("999") and first["has_stats"] is True
+    assert rookie["has_stats"] is False and rookie["contract_type"] == "two_way"
+    # Cap sheet total minus listed salaries is dead money, used as other charges.
+    context = trade_data.load_cap_context([10, 20], result)
+    assert context[10]["other_cap_charges"] == "501.00"
+    assert context[10]["charges_confirmed"] is True
+
+
+def test_cap_context_without_cap_sheet_is_unconfirmed_zero():
+    teams = {10: {"source_total_salary": None, "players": []}}
+    context = trade_data.load_cap_context([10], teams)[10]
+    assert context["other_cap_charges"] == "0.00" and context["charges_confirmed"] is False
+
+
+def test_players_without_stats_count_for_payroll_not_wins(client, payload, loaded, teams):
+    baseline = client.post("/api/trade/analyze", json=payload).json["data"]["teams"][0]
+    teams[10]["players"].append({
+        "player_id": 99, "name": "Rookie", "lebron": None, "minutes": None,
+        "actual_salary": Decimal("5000000"), "has_stats": False,
+    })
+    result = client.post("/api/trade/analyze", json=payload).json["data"]["teams"][0]
+    assert result["projected_wins"] == baseline["projected_wins"]
+    assert Decimal(result["payroll"]["before"]) == Decimal(baseline["payroll"]["before"]) + 5000000
 
 
 @pytest.mark.parametrize("rows,code", [
@@ -294,7 +320,8 @@ def test_target_query_scoped_to_season(monkeypatch):
     query = MagicMock(return_value=[])
     monkeypatch.setattr(trade_data, "query", query)
     assert trade_data.load_target_candidates(7) == []
-    assert query.call_args.args[1] == (7,)
+    assert query.call_args.args[1] == (2026, 7)
+    assert "JOIN player_contracts" in query.call_args.args[0]
     assert "SUM(pts.minutes_played)" in query.call_args.args[0]
 
 

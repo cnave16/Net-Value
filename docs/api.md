@@ -70,10 +70,11 @@ Use actual IDs from `/seasons`; the example does not assert which year ID 1 mean
     "id": 1,
     "name": "Sample Player",
     "external_id": null,
-    "team": null,
-    "salary": null,
-    "predicted_value": null,
-    "surplus": null
+    "team": "BOS",
+    "salary": 30348000.0,
+    "predicted_value": 57736350.0,
+    "surplus": 27388350.0,
+    "contract_type": "standard"
   }],
   "meta": {
     "page": 1, "limit": 20, "total": 1, "total_pages": 1,
@@ -99,9 +100,9 @@ An ID of zero or above 2147483647 returns 400. A valid ID with no player returns
 
 Team filtering means **played for that team in that season**, not current
 roster membership. A traded player can match multiple teams in one season.
-Results do not duplicate players. `team` stays null until the schema contains
-authoritative current roster information. Salary, predicted value, and surplus
-also remain null because the current schema/model does not supply them.
+Results do not duplicate players. `team`, `salary`, `predicted_value`, `surplus`,
+and `contract_type` have the same meaning as in [`POST /valuation`](#valuation);
+`team` is the 2026–27 contract team, or null without a contract.
 An empty or out-of-range page returns 200 with `data: []` and the true count.
 
 ## Roster win projection
@@ -157,15 +158,16 @@ transfer supplies `player_id`, `from_team_id`, and `to_team_id`. The old
 
 Analysis returns each team's before/after roster IDs, wins, win percentages,
 payroll, estimated cap space, and legality checks. Percentages use 0–100;
-differences are percentage points. Salaries provisionally use `contract_value`
-as annual USD. Missing salary totals remain null. Cap estimates exclude
-untracked holds/dead money and always use the supplied **2026–27** cap/apron
-figures. `salary_cap.minimum_team_salary` is informational. `season_id` selects
+differences are percentage points. Rosters and cap salaries come from
+`player_contracts` (2026–27 contracts; see [trades.md](trades.md)). A payroll
+total is null when any listed salary is unknown. Cap estimates include the
+source's dead money but not cap holds or exceptions, and always use the supplied
+**2026–27** cap/apron figures. `salary_cap.minimum_team_salary` is informational. `season_id` selects
 the source data snapshot, not the trade season: older ratings can feed the
 upcoming-season model. Responses expose `meta.data_season_id` and
 `meta.trade_season: {"start_year": 2026, "end_year": 2027}`. Existing requests
-with `season_id: 1` need no changes. Roster and contract records from that source
-snapshot remain provisional until confirmed for 2026–27.
+with `season_id: 1` need no changes. Players without ratings and minutes in the
+data season (`has_stats: false`, e.g. rookies) count toward payroll but not wins.
 
 `legality.passes_supported_rules` reports the outcome of implemented roster,
 salary-matching, and apron checks. `legality.is_legal` remains null because full
@@ -173,32 +175,47 @@ NBA eligibility cannot be established from the available data. A salary-rule
 failure still returns projections; failed ownership checks set
 `analysis_available: false`. Missing model inputs return 422.
 
-Rosters remain historical season membership. The dashboard and simulation do
-not persist a commissioner choice or execute roster changes. Frontend files
-are unchanged; its trade helper must adopt the new payload.
+The dashboard and simulation do not persist a commissioner choice or execute
+roster changes.
+
+## Valuation
+
+`POST /valuation` with `{"player_id": 95}` (a database ID; nothing else) returns:
+
+```json
+{
+  "data": {
+    "player_id": 95, "salary": 30348000.0, "predicted_value": 57736350.0,
+    "surplus": 27388350.0, "contract_type": "standard"
+  },
+  "meta": {
+    "fair_value_basis": "league_cap_budget_by_lebron_above_replacement_times_minutes",
+    "stats_season_end_year": 2026,
+    "salary_season": {"start_year": 2026, "end_year": 2027},
+    "salary_source": "player_contracts.cap_salary"
+  },
+  "error": null
+}
+```
+
+- `predicted_value` is Chase's fair annual salary (`data_model/salary_value.py`):
+  the league's cap budget split by LEBRON above replacement times minutes in the
+  latest complete stats season, with a minimum salary floor and a 35%-of-cap
+  ceiling. It is null for players without an NBA ID or playable minutes, such as
+  rookies. The league valuation is cached in the API process for 10 minutes.
+- `salary` is the 2026–27 cap salary. It is null for two-way contracts (their
+  pay is not listed), for standard contracts the source has not priced yet,
+  and for players without a contract (`contract_type: null`).
+- `surplus` is `predicted_value - salary`, null when either is missing.
+
+A nonexistent player returns 404; a malformed body returns 400.
 
 ## Reserved endpoints
 
-`POST /valuation` and `GET /picks` always return 501
-with `NOT_IMPLEMENTED`. They do not yet validate input, query assets, or perform
-analysis. The frontend should show these features as unavailable.
-
-The proposal's request formats remain design targets:
-
-- Valuation: `player_id`, `ppg`, `rpg`, `apg`, `per`, `win_shares`, `age`.
-- Picks: `slot`, `round`, optional `year`.
-
-Before these become working endpoints, coordinate the following:
-
-- Chase: the integrated model predicts roster wins from LEBRON ratings and
-  historical minutes. Agree on a separate player-value or fair-market-salary
-  model before implementing `/valuation`; roster wins do not supply those values.
-- Vincent and Chase: current roster membership, contract years and salaries,
-  draft pick ownership/protections, and data freshness fields. Trade simulation
-  provisionally maps `player_seasons.contract_value` to annual salary; confirm
-  its units and meaning before treating the result as authoritative.
-- Bronson and Elias: response fields for analysis, validation failures, and
-  unavailable data. A 501 response must never display as a legal or illegal trade.
+`GET /picks` always returns 501 with `NOT_IMPLEMENTED`. It does not yet validate
+input, query assets, or perform analysis. The proposal's request format remains
+the design target: `slot`, `round`, optional `year`. Draft pick ownership and
+protections still need a data source.
 
 ## Configuration and checks
 
