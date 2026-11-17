@@ -4,10 +4,12 @@ import re
 from decimal import Decimal
 
 from flask import Blueprint, request
-from werkzeug.exceptions import BadRequest
+from werkzeug.exceptions import BadRequest, NotFound
 
 from .catalog import integer_argument
 from ..responses import success
+from ..database import query
+from ..services.trade_picks import load_pick_ownership, selectable_picks, FIRST_DRAFT, LAST_DRAFT
 from ..services.trade_data import load_cap_context, load_target_candidates, load_trade_rosters
 from ..services.trade_finances import TRADE_SEASON_START_YEAR
 from ..services.trades import analyze_trade, commissioner_dashboard
@@ -21,9 +23,10 @@ def positive_id(value):
 
 
 def parse_trade(body):
-    """Each player has one source and destination, including in three-way trades."""
-    if not isinstance(body, dict) or set(body) != {"season_id", "team_ids", "transfers"}:
-        raise BadRequest("Provide only season_id, team_ids, and transfers.")
+    """Each player or pick has one source and destination, including in three-way trades."""
+    required = {"season_id", "team_ids", "transfers"}
+    if not isinstance(body, dict) or not required <= set(body) or set(body) - (required | {"pick_transfers"}):
+        raise BadRequest("Provide season_id, team_ids, transfers, and optionally pick_transfers.")
     if not positive_id(body["season_id"]):
         raise BadRequest("season_id must be a positive database integer ID.")
     team_ids = body["team_ids"]
@@ -33,8 +36,8 @@ def parse_trade(body):
         raise BadRequest("Participating teams must be distinct.")
     transfers = body["transfers"]
     # Bound request work without presenting these limits as NBA eligibility rules.
-    if not isinstance(transfers, list) or not 1 <= len(transfers) <= 100:
-        raise BadRequest("transfers must contain 1 to 100 player transfers.")
+    if not isinstance(transfers, list) or not 0 <= len(transfers) <= 100:
+        raise BadRequest("transfers must contain 0 to 100 player transfers.")
     players, involved = set(), set()
     for transfer in transfers:
         if not isinstance(transfer, dict) or set(transfer) != {"player_id", "from_team_id", "to_team_id"}:
@@ -48,8 +51,27 @@ def parse_trade(body):
             raise BadRequest("A player can move only once in a simulation.")
         players.add(transfer["player_id"])
         involved.update((source, destination))
+    pick_transfers = body.get("pick_transfers", [])
+    if not isinstance(pick_transfers, list) or len(pick_transfers) > 100:
+        raise BadRequest("pick_transfers must contain 0 to 100 picks.")
+    picks = set()
+    for move in pick_transfers:
+        if not isinstance(move, dict) or set(move) != {"draft_year", "round", "original_team_id", "from_team_id", "to_team_id"}:
+            raise BadRequest("Each pick requires draft_year, round, original_team_id, from_team_id, and to_team_id.")
+        if not all(positive_id(v) for v in move.values()) or move["round"] not in (1, 2):
+            raise BadRequest("Pick fields must be positive integer IDs/years and round must be 1 or 2.")
+        source, destination = move["from_team_id"], move["to_team_id"]
+        if source == destination or source not in team_ids or destination not in team_ids:
+            raise BadRequest("Each pick must connect two distinct participating teams.")
+        key = (move["draft_year"], move["round"], move["original_team_id"])
+        if key in picks:
+            raise BadRequest("A pick can move only once in a simulation.")
+        picks.add(key)
+        involved.update((source, destination))
+    if not transfers and not pick_transfers:
+        raise BadRequest("Select at least one player or pick.")
     if involved != set(team_ids):
-        raise BadRequest("Every participating team must send or receive a player.")
+        raise BadRequest("Every participating team must send or receive a player or pick.")
     return team_ids, body["season_id"], transfers
 
 
@@ -72,6 +94,7 @@ def simulation_meta(season_id):
             "but not win projections.",
             "Minutes stay fixed at the data season's totals; this does not predict a new rotation.",
             "Cap figures include the source's dead money but not cap holds, exceptions, or bonuses.",
+            "Future picks have no estimated value and do not change current wins or salary matching.",
             "Passing supported checks does not establish full NBA trade legality.",
         ],
     }
@@ -80,10 +103,15 @@ def simulation_meta(season_id):
 @trades.post("/trade/analyze")
 @trades.post("/trade/validate")
 def trade_analysis():
-    team_ids, season_id, transfers = parse_trade(request.get_json())
+    body = request.get_json()
+    team_ids, season_id, transfers = parse_trade(body)
     teams = load_trade_rosters(team_ids, season_id)
     cap_context = load_cap_context(team_ids, teams)
-    return success(analyze_trade(teams, team_ids, transfers, cap_context), simulation_meta(season_id))
+    pick_transfers = body.get("pick_transfers", [])
+    ownership = load_pick_ownership() if pick_transfers else []
+    league_ids = {r["team_id"] for r in query("SELECT team_id FROM teams")} if pick_transfers else set()
+    return success(analyze_trade(teams, team_ids, transfers, cap_context,
+                                 pick_transfers, ownership, league_ids), simulation_meta(season_id))
 
 
 @trades.get("/trade/teams/<int:team_id>")
@@ -116,3 +144,18 @@ def team_dashboard(team_id):
     )
     values = load_recommendation_values(season_id)
     return success(commissioner_dashboard(teams[team_id], candidates, context.get(team_id, {}), values, budget), meta)
+
+
+@trades.get("/trade/teams/<int:team_id>/picks")
+def team_picks(team_id):
+    """List only resolved future picks; keep slot valuations at /picks separate."""
+    if not positive_id(team_id) or request.args:
+        raise BadRequest("Provide a positive team ID and no query parameters.")
+    if not query("SELECT team_id FROM teams WHERE team_id = %s", (team_id,)):
+        raise NotFound("Team not found.")
+    rows = load_pick_ownership()
+    return success(selectable_picks(rows, team_id), {
+        "first_draft_year": FIRST_DRAFT, "last_draft_year": LAST_DRAFT,
+        "estimated_values": False,
+        "warning": "Only resolved ownership is selectable. Pick freezes and league penalties still need review.",
+    })

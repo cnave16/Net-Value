@@ -16,7 +16,7 @@ function page() {
   let result
   const context = vm.createContext({
     idle: { status: 'idle' }, analysisVersion: { current: 0 },
-    season: { id: 1 }, teamIds: [1, 2], moveList: [], moves: {}, slots: [{}, {}],
+    season: { id: 1 }, teamIds: [1, 2], moveList: [], pickMoveList: [], moves: {}, slots: [{}, {}],
     setResult: (value) => { result = value }, setMoves: () => {}, setSlots: () => {}, newSlot: () => ({}),
     analyzeTrade: () => new Promise((resolve, reject) => pending.push({ resolve, reject })),
   })

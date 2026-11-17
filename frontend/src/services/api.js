@@ -101,11 +101,11 @@ export function getTradeTeam(teamId, seasonId, availableSalary = null) {
 }
 
 // transfers: [{ player_id, from_team_id, to_team_id }]. Every team in teamIds must take part.
-export function analyzeTrade({ seasonId, teamIds, transfers }) {
+export function analyzeTrade({ seasonId, teamIds, transfers, pickTransfers = [] }) {
   return request({
     method: 'post',
     url: '/trade/analyze',
-    data: { season_id: seasonId, team_ids: teamIds, transfers },
+    data: { season_id: seasonId, team_ids: teamIds, transfers, pick_transfers: pickTransfers },
     // Projecting every roster can take longer than a catalog read.
     timeout: 30000,
   })
@@ -113,4 +113,9 @@ export function analyzeTrade({ seasonId, teamIds, transfers }) {
 
 export function getPicks({ slot, round, year } = {}) {
   return request({ method: 'get', url: '/picks', params: { slot, round, year } })
+}
+
+// Future ownership, not the historical draft-slot valuation endpoint.
+export function getTradePicks(teamId) {
+  return request({ method: 'get', url: `/trade/teams/${teamId}/picks` })
 }

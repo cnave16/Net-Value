@@ -1,8 +1,8 @@
 # Multi-team trade simulator
 
-The backend supplies a commissioner dashboard and simulates simultaneous player
+The backend supplies a commissioner dashboard and simulates simultaneous player and draft-pick
 transfers between 2–30 teams for the upcoming **2026–27 season only**. There is one general trade format; the old
-`team_a_*` / `team_b_*` format is removed. No frontend files are changed.
+`team_a_*` / `team_b_*` format is removed. The frontend includes a multi-team trade builder.
 All endpoints are read-only and use the usual `{data, meta, error}` envelope.
 
 ## Commissioner dashboard
@@ -106,9 +106,10 @@ receive from several teams, or only send/receive. Every listed team must take
 part. Players cannot be routed through an intermediate team within one request.
 
 Team IDs must be distinct. All IDs must be JSON integers from 1 to 2147483647;
-strings and booleans are rejected. Requests accept 1–100 transfers as a work
-limit, not an NBA roster rule. Extra fields, picks, cash, and client-supplied
-salary/cap overrides are rejected. The general format also supports a trade
+strings and booleans are rejected. Requests accept 0–100 player transfers and an optional array of 0–100
+pick transfers, with at least one asset moving. These are work limits, not NBA
+roster rules. Extra fields, cash, and client-supplied salary/cap overrides are
+rejected. See [future draft picks](#future-draft-picks) for the pick contract. The general format also supports a trade
 with two participants; there is no separate two-team option or service.
 
 ## Trade response
@@ -254,3 +255,105 @@ had no salary on the source yet, so those teams' payroll totals are null.
 
 Before presenting results as current NBA legality, add the contract,
 exception, cap-accounting, roster, and date inputs listed in `not_checked`.
+
+## Future draft picks
+
+The simulator accepts resolved future pick ownership alongside players. Picks have
+no estimated value, no projected rookie contribution, and no salary-matching
+value. This is separate from `/api/picks`, which values known draft slots.
+
+`GET /api/trade/teams/<team_id>/picks` returns resolved picks owned by that team
+within 2027–2033. Each pick includes `draft_year`, `round`, `original_team_id`,
+`original_team_abbreviation`, `owner_team_id`, `ownership_type`, `is_resolved`,
+and `notes`. Metadata supplies the draft-year bounds. No query parameters are
+needed: the window follows the simulator's 2026–27 contract season, not the
+historical ratings season. Update the season configuration and ownership snapshot
+when advancing the simulator to another contract season.
+
+Both trade POST endpoints accept optional `pick_transfers`:
+
+```json
+{
+  "season_id": 1,
+  "team_ids": [1, 2],
+  "transfers": [],
+  "pick_transfers": [
+    {"draft_year": 2027, "round": 2, "original_team_id": 1,
+     "from_team_id": 1, "to_team_id": 2}
+  ]
+}
+```
+
+This illustrates the payload, not a guarantee that the named team owns that pick.
+The composite identity is year + round + original team. A pick can move once;
+its sender must match its resolved owner. Every participating team must send or
+receive a player or pick. Each array is limited to 100 transfers; their combined
+count must be positive. Older player-only requests remain compatible.
+
+Results add `incoming_picks` and `outgoing_picks` per team, with source,
+destination, and post-trade owner. Simulation never writes ownership to the DB.
+Pick-only trades leave current rosters, projected wins, payroll, and cap space
+unchanged. Missing/incorrect ownership or an out-of-window pick prevents analysis;
+a supported Stepien failure still shows the proposed trade effects with a failed
+legality verdict.
+
+Supported checks:
+
+- Resolved ownership, distinct participating sender/receiver, and no duplicate asset.
+- Seven future drafts (2027–2033 for this simulation).
+- Stepien: a team sending a first must retain a first in each affected pair of
+  consecutive future drafts. Resolved firsts acquired in the same trade count,
+  including picks originally belonging to another team. Seconds do not count.
+- Existing player salary rules still apply; adding picks cannot cover a salary mismatch.
+
+Stepien is evaluated against the full ownership snapshot, including rows not
+selectable in the UI. If neither year in an affected pair has a guaranteed
+resolved first, missing rows or unresolved rights produce **Needs review**.
+The schema does not enumerate all claimants or protection rollover scenarios, so
+an unresolved first anywhere in either year prevents a definite failure for that
+pair. Complete, resolved coverage with no retained first produces a failure.
+The adjacent year beyond the seven-draft horizon also needs coverage if no pick
+remains in the final year. This conservative check does not adjudicate protections.
+
+Second-apron pick freezes and league penalties are **not enforced**: the snapshot
+has no restriction history. Sending a first adds an explicit unknown restriction
+check even if Stepien passes. Current payroll is not evidence of historical
+freeze status. Protected pick trades, new protections, swap rights, cash, drafted
+player rights, and future rookie projections are not supported. `is_legal` remains
+null; supported checks never constitute full NBA approval.
+
+Rule references: [NBA Constitution and By-Laws, June 2024, §7.03](https://cms.nba.com/wp-content/uploads/sites/4/2024/06/NBA-Consitution-By-Laws-June-2024.pdf)
+for Stepien; the [NBA's explanation of future-pick trade limits](https://www.nba.com/news/how-much-are-teams-willing-to-give-up-in-trades-these-days)
+for the seven-year limit; and [2023 CBA Article VII §2(f)](https://imgix.cosmicjs.com/25da5eb0-15eb-11ee-b5b3-fbd321202bdf-Final-2023-NBA-Collective-Bargaining-Agreement-6-28-23.pdf)
+for the historical second-apron restriction that requires additional data.
+
+### Ownership schema and deployment
+
+`database_config/migrations/001_draft_pick_ownership.sql` is additive and matches
+Vincent's test table. New database setup also includes it. Existing deployments
+need the migration and populated ownership data before serving pick requests.
+If pick loading fails, the frontend shows the error and keeps player trading
+available. No API route creates tables or alters ownership.
+
+`database_config/copy_pick_ownership.py` validates 30 teams and complete per-year,
+per-round coverage, remaps IDs by team abbreviation, and preserves unresolved
+rows for legality checks. It defaults to a dry run. An explicit apply backs up
+the source, target ownership, and team mapping before an atomic upsert, then
+verifies all copied fields. Other tables are never written; existing rows outside
+the copied years are not deleted. Connection strings are read from an env file
+and must not be committed.
+
+```sh
+python database_config/copy_pick_ownership.py --env-file /path/to/.env
+# After reviewing the dry run, choose a new backup directory:
+python database_config/copy_pick_ownership.py --env-file /path/to/.env \
+  --apply --backup-dir /path/to/new-pick-backup
+```
+
+The default source/target keys are `TEST_DATABASE_URL`/`PROD_DATABASE_URL`; override
+with `--source-key` and `--target-key` when needed. This copies a complete source
+snapshot, not individual experimental edits. Keep the backup for recovery.
+
+The frontend stores pick routes in `p=year-round-originalTeam-fromTeam-toTeam,...`
+alongside existing `t` and `m` URL parameters. Team replacement, removal, reset,
+and destination changes apply to both asset types and invalidate pending analyses.

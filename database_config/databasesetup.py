@@ -1,3 +1,4 @@
+from pathlib import Path
 import os
 import psycopg2
 from dotenv import load_dotenv
@@ -216,6 +217,8 @@ CREATE TABLE IF NOT EXISTS draft_picks (
 
 
 # Columns added after a table was first created; safe to rerun.
+CREATE_TABLES_SQL += (Path(__file__).parent / "migrations" / "001_draft_pick_ownership.sql").read_text()
+
 ALTER_TABLES_SQL = """
 ALTER TABLE player_contracts
     ADD COLUMN IF NOT EXISTS later_salaries NUMERIC(14, 2)[] NOT NULL DEFAULT '{}';
