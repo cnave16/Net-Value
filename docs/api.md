@@ -48,7 +48,7 @@ and display the message to the user. Database and server internals are omitted.
 | GET | `/players/<id>` | Player details; 404 if absent |
 | POST | `/projections/wins` | Estimate roster wins from one season's ratings and minutes |
 | GET | `/trade/teams/<id>?season_id=<id>` | Commissioner roster, win percentage, and top 15 addition targets |
-| POST | `/trade/analyze` | Compare all participating teams before and after directed player transfers |
+| POST | `/trade/analyze` | Compare all participating teams before and after directed player and pick transfers |
 | POST | `/trade/validate` | Alias for `/trade/analyze`, with the same request and response |
 
 `/players` accepts these query parameters:
@@ -176,7 +176,8 @@ See the trade contract for missing-data behavior and ranking metadata.
 Both trade POST routes require `season_id`, `team_ids`, and `transfers`. Each
 transfer supplies `player_id`, `from_team_id`, and `to_team_id`. The old
 `team_a_*` / `team_b_*` payload is no longer accepted. The general format supports
-2–30 teams and 1–100 distinct player transfers. Every team must participate.
+2–30 teams, up to 100 distinct player transfers, and optional `pick_transfers`
+(up to 100). At least one player or pick must move; every team must participate.
 
 Analysis returns each team's before/after roster IDs, wins, win percentages,
 payroll, estimated cap space, and legality checks. Percentages use 0–100;
@@ -263,8 +264,9 @@ A nonexistent player returns 404; a malformed body returns 400.
 `meta` gives the stats season, the draft classes used, the sample size, and the
 `assumptions` (`data_model/draft_value.py`), with `confirmed` and `under_review`
 lists naming which settings are settled. Missing draft or stats
-data returns 422. Pick ownership and protections, needed to trade picks, still
-need a data source.
+data returns 422. Future ownership is separate from these slot valuations;
+see [future draft-pick trading](#future-draft-pick-trading) for resolved ownership
+and the limits on protection checks.
 
 ## Configuration and checks
 
@@ -294,3 +296,17 @@ Automated tests cover response behavior, validation, bound query parameters,
 pagination edge cases, database failure handling, connection cleanup, and CORS.
 They mock PostgreSQL. The live projection check above verified the test database
 separately; automated test success alone does not verify live connectivity.
+
+### Future draft-pick trading
+
+`GET /api/trade/teams/<team_id>/picks` lists resolved future ownership (2027–2033),
+without estimated values. This is distinct from the existing `/api/picks` slot
+valuation endpoint.
+
+`POST /api/trade/analyze` and `/api/trade/validate` accept optional `pick_transfers`
+with `draft_year`, `round`, `original_team_id`, `from_team_id`, and `to_team_id`.
+`transfers` remains required but may be empty when picks move. Responses add
+`incoming_picks`/`outgoing_picks` to each team and ownership, horizon, and Stepien
+checks to legality. Unknown protection outcomes and missing restriction history
+require review. See [trade documentation](trades.md#future-draft-picks) for the
+payload, rules, limits, and additive database deployment procedure.

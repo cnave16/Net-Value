@@ -11,6 +11,7 @@ from .recommendations import model_player
 
 from .trade_finances import cap_comparison, dollar, money, payroll
 from .trade_legality import check_trade
+from .trade_picks import check_pick_transfers, attach_pick_checks, pick_details, pick_key
 
 
 def projection(roster):
@@ -76,7 +77,7 @@ def player_details(player):
     }
 
 
-def analyze_trade(teams, team_ids, transfers, cap_context):
+def analyze_trade(teams, team_ids, transfers, cap_context, pick_transfers=None, ownership=None, league_team_ids=None):
     """Apply every move at once, then run checks and project all participating teams."""
     outgoing = {team_id: [] for team_id in team_ids}
     incoming = {team_id: [] for team_id in team_ids}
@@ -85,10 +86,23 @@ def analyze_trade(teams, team_ids, transfers, cap_context):
         incoming[transfer["to_team_id"]].append(transfer["player_id"])
 
     legality = check_trade(teams, team_ids, outgoing, incoming, cap_context)
-    if not legality["roster_checks_passed"]:
+    pick_transfers = pick_transfers or []
+    ownership = ownership or []
+    picks_valid = True
+    if pick_transfers:
+        checks, picks_valid = check_pick_transfers(ownership, pick_transfers, team_ids, league_team_ids or set())
+        attach_pick_checks(legality, checks)
+    if not legality["roster_checks_passed"] or not picks_valid:
         return {"analysis_available": False, "teams": [], "legality": legality}
 
     players = {p["player_id"]: p for team_id in team_ids for p in teams[team_id]["players"]}
+    by_pick = {pick_key(p): p for p in ownership}
+    def moved_picks(team_id, direction):
+        return [{**pick_details(by_pick[pick_key(p)]),
+                 "from_team_id": p["from_team_id"], "to_team_id": p["to_team_id"],
+                 "owner_team_id": p["to_team_id"], "ownership_type": "traded"}
+                for p in pick_transfers if p[direction] == team_id]
+
     results = []
     for team_id in team_ids:
         team = teams[team_id]
@@ -104,6 +118,8 @@ def analyze_trade(teams, team_ids, transfers, cap_context):
             "roster_after": [p["player_id"] for p in after],
             "outgoing_player_ids": sorted(outgoing[team_id]),
             "incoming_player_ids": sorted(incoming[team_id]),
+            "outgoing_picks": moved_picks(team_id, "from_team_id"),
+            "incoming_picks": moved_picks(team_id, "to_team_id"),
             **win_comparison(before_wins, after_wins),
             "payroll": salaries,
             "salary_cap": cap_comparison(salaries, cap_context.get(team_id, {})),

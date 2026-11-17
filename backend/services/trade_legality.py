@@ -14,7 +14,9 @@ NOT_CHECKED = [
     "trade_deadline_moratorium_and_postseason_rules",
     "recently_acquired_player_aggregation_restrictions",
     "roster_limits_and_contract_types",
-    "draft_picks_cash_and_other_assets",
+    "protected_pick_scenarios_swaps_and_rollovers",
+    "second_apron_pick_freezes_and_league_penalties",
+    "cash_and_other_assets",
 ]
 
 
@@ -49,6 +51,15 @@ def independent_salary_matches(outgoing, incoming, max_states=10000):
 
 def salary_checks(team_id, before, outgoing, incoming, context):
     """Check cap-room or simultaneous matching, using post-trade apron levels."""
+    # A picks-only participant has no incoming contract to match, even if a
+    # roster salary is missing. Its payroll display can still remain unknown.
+    if not outgoing and not incoming:
+        return [{
+            "code": "SALARY_MATCHING", "team_id": team_id, "passed": True,
+            "message": "No player contracts move; picks do not change salary matching.",
+            "rule": "no_player_contracts", "outgoing_salary": "0.00",
+            "incoming_salary": "0.00", "maximum_incoming_salary": "0.00",
+        }]
     outgoing_values = [money(p.get("actual_salary")) for p in outgoing]
     incoming_values = [money(p.get("actual_salary")) for p in incoming]
     before_values = [money(p.get("actual_salary")) for p in before]

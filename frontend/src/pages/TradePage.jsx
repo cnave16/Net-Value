@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { analyzeTrade, getSeasons, getTeams, getTradeTeam, USE_MOCK } from '../services/api.js'
+import { analyzeTrade, getSeasons, getTeams, getTradeTeam, getTradePicks, USE_MOCK } from '../services/api.js'
 import { formatMoney, formatSeason } from '../services/format.js'
 
-// Multi-team trade builder. Each checked player moves from their roster to a chosen
+// Multi-team trade builder. Each checked player or resolved future pick moves from their roster to a chosen
 // destination; the backend accepts 2–30 teams, the UI caps it at MAX_TEAMS for legibility.
 // The trade lives in the URL (?t=teamIds&m=player-from-to,...) so it can be shared.
 
 const MAX_TEAMS = 5
 const TARGETS_SHOWN = 5
+const pickId = (p) => `pick:${p.draft_year}-${p.round}-${p.original_team_id}`
+const pickLabel = (p) => `${p.draft_year} ${p.round === 1 ? '1st' : '2nd'} · ${p.original_team_abbreviation ?? `Team #${p.original_team_id}`} original`
 
 function signed(value, digits = 1) {
   if (value == null) return '—'
@@ -66,13 +68,21 @@ function parseTradeParams(params, knownTeamIds) {
       moves[playerId] = { from, to }
     }
   }
+  for (const part of (params.get('p') ?? '').split(',')) {
+    const fields = part.split('-').map(positiveInt)
+    const [year, round, original, from, to] = fields
+    if (fields.length === 5 && year && [1, 2].includes(round) && knownTeamIds.has(original)
+      && teamIds.includes(from) && teamIds.includes(to) && from !== to) {
+      moves[`pick:${year}-${round}-${original}`] = { from, to }
+    }
+  }
   const slots = teamIds.map(newSlot)
   while (slots.length < 2) slots.push(newSlot())
   return { slots, moves }
 }
 
 function TeamColumn({
-  index, slot, teams, takenIds, tradeTeamIds, roster, moves, players, canRemove, seasonId,
+  index, slot, teams, takenIds, tradeTeamIds, roster, moves, players, picks, canRemove, seasonId,
   onTeamChange, onRemove, onToggle, onDestination, onRequestTarget, canRequest,
 }) {
   const [showAllTargets, setShowAllTargets] = useState(false)
@@ -123,6 +133,9 @@ function TeamColumn({
     .filter(([, m]) => m.to === teamId)
     .map(([id]) => players[id]?.player)
     .filter(Boolean)
+  const outgoingPicks = (team?.draft_picks ?? []).filter((p) => moves[pickId(p)]?.from === teamId)
+  const incomingPicks = Object.entries(moves).filter(([id, m]) => m.to === teamId && picks[id]?.owner_team_id === m.from)
+    .map(([id]) => picks[id]).filter(Boolean)
   const destinations = tradeTeamIds.filter((id) => id !== teamId)
   const abbreviation = (id) => teams.find((t) => t.id === id)?.abbreviation ?? `#${id}`
   const targetTeam = filtered ? (filtered.status === 'ready' ? filtered.team : null) : team
@@ -158,17 +171,17 @@ function TeamColumn({
             <div><small>Payroll</small><SalaryAmount players={team.roster} /></div>
           </div>
 
-          {(outgoing.length > 0 || incoming.length > 0) && (
+          {(outgoing.length > 0 || incoming.length > 0 || outgoingPicks.length > 0 || incomingPicks.length > 0) && (
             <div className="trade-ledger">
               <div>
-                <small>Sends</small>
+                <small>Sends · player salary</small>
                 {outgoing.length > 0 ? <SalaryAmount players={outgoing} /> : <strong>$0</strong>}
-                <span className="fine muted">{outgoing.map((p) => p.name).join(', ') || 'Nothing'}</span>
+                <span className="fine muted">{[...outgoing.map((p) => p.name), ...outgoingPicks.map(pickLabel)].join(', ') || 'Nothing'}</span>
               </div>
               <div>
-                <small>Receives</small>
+                <small>Receives · player salary</small>
                 {incoming.length > 0 ? <SalaryAmount players={incoming} /> : <strong>$0</strong>}
-                <span className="fine muted">{incoming.map((p) => p.name).join(', ') || 'Nothing'}</span>
+                <span className="fine muted">{[...incoming.map((p) => p.name), ...incomingPicks.map(pickLabel)].join(', ') || 'Nothing'}</span>
               </div>
             </div>
           )}
@@ -205,6 +218,39 @@ function TeamColumn({
               )
             })}
           </ul>
+
+          <details className="trade-picks">
+            <summary>Draft picks ({team.draft_picks?.length ?? 0})</summary>
+            <p className="fine muted">Resolved ownership only. No estimated values; picks do not change current wins or salaries. Freeze restrictions still need review.</p>
+            {team.pick_error && <p className="error">Picks unavailable: {team.pick_error}</p>}
+            {!team.pick_error && !team.draft_picks?.length && <p className="muted">No resolved picks available.</p>}
+            <ul className="trade-roster">
+              {(team.draft_picks ?? []).map((pick) => {
+                const id = pickId(pick)
+                const move = moves[id]
+                const checked = move?.from === teamId
+                return (
+                  <li key={id} className={checked ? 'checked' : ''}>
+                    <label>
+                      <input type="checkbox" checked={checked} onChange={() => onToggle(id)} />
+                      <span className="trade-player-name">{pickLabel(pick)}</span>
+                    </label>
+                    {pick.notes && <p className="fine muted">{pick.notes}</p>}
+                    {checked && destinations.length > 0 && (
+                      <div className="trade-destination">
+                        <span>To</span>
+                        <select aria-label={`Destination for ${pickLabel(pick)}`} value={move.to ?? ''}
+                          onChange={(e) => onDestination(id, e.target.value ? Number(e.target.value) : null)}>
+                          {move.to == null && <option value="">Choose…</option>}
+                          {destinations.map((dest) => <option key={dest} value={dest}>{abbreviation(dest)}</option>)}
+                        </select>
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          </details>
 
           {team && (
             <div className="trade-targets">
@@ -282,7 +328,12 @@ function TeamResult({ team, players }) {
   return (
     <div className="trade-result-team">
       <h2>{team.abbreviation}</h2>
-      <p className="fine muted">Gets: {list(team.incoming_player_ids)}<br />Sends: {list(team.outgoing_player_ids)}</p>
+      <p className="fine muted">Players received: {list(team.incoming_player_ids)}<br />Players sent: {list(team.outgoing_player_ids)}</p>
+      {(team.incoming_picks?.length > 0 || team.outgoing_picks?.length > 0) && (
+        <p className="fine muted">Picks received: {(team.incoming_picks ?? []).map(pickLabel).join(', ') || 'None'}<br />
+          Picks sent: {(team.outgoing_picks ?? []).map(pickLabel).join(', ') || 'None'}<br />
+          Future pick value is not included in these projections.</p>
+      )}
       <div className={`surplus ${tone(wins.net_difference)}`}>
         <span>Projected wins</span>
         <strong>{signed(wins.net_difference)}</strong>
@@ -381,8 +432,13 @@ export default function TradePage() {
       if (!teamId || requested.current.has(teamId)) continue
       requested.current.add(teamId)
       setRosters((r) => ({ ...r, [teamId]: { status: 'loading' } }))
-      getTradeTeam(teamId, season.id)
-        .then(({ data }) => ({ status: 'ready', team: data }))
+      Promise.all([
+        getTradeTeam(teamId, season.id),
+        getTradePicks(teamId).catch((error) => ({ data: [], error: error.message })),
+      ])
+        .then(([{ data }, pickResponse]) => ({ status: 'ready', team: {
+          ...data, draft_picks: pickResponse.data, pick_error: pickResponse.error,
+        } }))
         .catch((error) => {
           requested.current.delete(teamId) // allow a retry by reselecting the team
           return { status: 'error', error }
@@ -399,19 +455,25 @@ export default function TradePage() {
     const params = {}
     if (teamIds.length) params.t = teamIds.join(',')
     const encoded = Object.entries(moves)
-      .filter(([, m]) => m.to != null)
+      .filter(([id, m]) => !id.startsWith('pick:') && m.to != null)
       .map(([id, m]) => `${id}-${m.from}-${m.to}`)
     if (encoded.length) params.m = encoded.join(',')
+    const encodedPicks = Object.entries(moves)
+      .filter(([id, m]) => id.startsWith('pick:') && m.to != null)
+      .map(([id, m]) => `${id.slice(5)}-${m.from}-${m.to}`)
+    if (encodedPicks.length) params.p = encodedPicks.join(',')
     setSearchParams(params, { replace: true })
     // teamIds and the URL setter derive from these; listing them would loop.
   }, [hydrated, slots, moves]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Every player on a loaded participating roster, plus anyone listed on two of them.
   const players = {}
+  const picks = {}
   const shared = []
   for (const id of teamIds) {
     const roster = rosters[id]
     if (roster?.status !== 'ready') continue
+    for (const pick of roster.team.draft_picks ?? []) picks[pickId(pick)] = pick
     for (const player of roster.team.roster) {
       const seen = players[player.player_id]
       if (seen && seen.teamId !== id) shared.push({ player, teams: [seen.teamId, id] })
@@ -424,9 +486,14 @@ export default function TradePage() {
   const moveList = Object.entries(moves)
     .filter(([id, m]) => players[id]?.teamId === m.from)
     .map(([id, m]) => ({ player_id: Number(id), from_team_id: m.from, to_team_id: m.to }))
-  const undirected = moveList.filter((m) => m.to_team_id == null)
-  const uninvolved = teamIds.filter((id) => !moveList.some((m) => m.from_team_id === id || m.to_team_id === id))
-  const canAnalyze = ready && moveList.length > 0 && undirected.length === 0
+  const pickMoveList = Object.entries(moves)
+    .filter(([id, m]) => picks[id]?.owner_team_id === m.from)
+    .map(([id, m]) => ({ draft_year: picks[id].draft_year, round: picks[id].round,
+      original_team_id: picks[id].original_team_id, from_team_id: m.from, to_team_id: m.to }))
+  const allMoves = [...moveList, ...pickMoveList]
+  const undirected = allMoves.filter((m) => m.to_team_id == null)
+  const uninvolved = teamIds.filter((id) => !allMoves.some((m) => m.from_team_id === id || m.to_team_id === id))
+  const canAnalyze = ready && allMoves.length > 0 && undirected.length === 0
     && uninvolved.length === 0 && shared.length === 0 && result.status !== 'loading'
 
   const abbreviations = Object.fromEntries(teams.map((t) => [t.id, t.abbreviation]))
@@ -526,7 +593,7 @@ export default function TradePage() {
   function analyze() {
     const version = ++analysisVersion.current
     setResult({ status: 'loading' })
-    analyzeTrade({ seasonId: season.id, teamIds, transfers: moveList })
+    analyzeTrade({ seasonId: season.id, teamIds, transfers: moveList, pickTransfers: pickMoveList })
       .then(({ data, meta }) => {
         if (version === analysisVersion.current) setResult({ status: 'ready', data, meta })
       })
@@ -546,10 +613,10 @@ export default function TradePage() {
 
   let hint = null
   if (ready && shared.length === 0) {
-    if (moveList.length === 0) hint = 'Check at least one player to trade.'
-    else if (undirected.length > 0) hint = 'Choose where each checked player goes.'
+    if (allMoves.length === 0) hint = 'Check at least one player or pick to trade.'
+    else if (undirected.length > 0) hint = 'Choose where each checked player or pick goes.'
     else if (uninvolved.length > 0) {
-      hint = `${uninvolved.map((id) => abbreviations[id]).join(', ')} must send or receive a player.`
+      hint = `${uninvolved.map((id) => abbreviations[id]).join(', ')} must send or receive a player or pick.`
     }
   }
 
@@ -557,7 +624,7 @@ export default function TradePage() {
     <section className="page trade-page">
       <h1>Trade Simulator</h1>
       <p className="muted">
-        Pick up to {MAX_TEAMS} teams and check the players each one sends. Rosters and salaries are
+        Pick up to {MAX_TEAMS} teams and check the players and draft picks each one sends. Rosters and salaries are
         2026–27 contracts; projections use {season ? formatSeason(season) : '…'} ratings and minutes.
       </p>
       {loadError && <p className="error">{loadError.message}</p>}
@@ -575,6 +642,7 @@ export default function TradePage() {
             roster={slot.teamId ? rosters[slot.teamId] : null}
             moves={moves}
             players={players}
+            picks={picks}
             canRemove={slots.length > 2}
             onTeamChange={(id) => setSlotTeam(slot.key, id)}
             onRemove={() => removeSlot(slot.key)}
@@ -595,7 +663,7 @@ export default function TradePage() {
             Add team
           </button>
         )}
-        {(teamIds.length > 0 || moveList.length > 0) && (
+        {(teamIds.length > 0 || allMoves.length > 0) && (
           <>
             <button type="button" className="trade-secondary" onClick={copyLink}>
               {copied ? 'Link copied' : 'Copy link'}
